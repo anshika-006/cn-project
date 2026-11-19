@@ -68,18 +68,22 @@ parsing.
 
 ```
 netscope/
-├── app.py                     # Streamlit interface (pages, upload, charts, tables)
+├── app.py                     # Streamlit interface: pages, navigation, upload, demo toggle
 ├── netscope/
 │   ├── __init__.py
 │   ├── packet_parser.py       # Reads PCAP/PCAPNG, extracts per-packet metadata
 │   ├── protocol_analyzer.py   # Layer-by-layer protocol classification + distributions
 │   ├── traffic_statistics.py  # Totals, unique IPs, top IPs, TCP/ICMP/DNS summaries
-│   └── filters.py             # Protocol and IP address filters
+│   ├── filters.py             # Protocol and IP address filters
+│   └── ui.py                  # Design system: colours, styles, cards, KPI tiles, charts
 ├── tests/
 │   ├── conftest.py            # Synthetic test packets (used only in tests)
 │   ├── test_packet_parser.py
 │   └── test_protocol_analyzer.py
-├── .streamlit/config.toml     # Light theme and 25 MB upload limit
+├── assets/                    # NetScope logo (logo.svg, mark.svg)
+├── sample_data/               # Synthetic demo capture (sample_capture.pcap)
+├── tools/make_sample_capture.py  # Rebuilds the demo capture with Scapy
+├── .streamlit/config.toml     # Brand theme (fonts, colours) and 25 MB upload limit
 ├── screenshots/               # Put your application screenshots here
 ├── requirements.txt
 ├── README.md

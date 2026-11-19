@@ -3,26 +3,31 @@ NetScope - Network Traffic Analysis and Packet Analyzer
 Streamlit user interface.
 
 Run with:   streamlit run app.py
+
+The look and feel (colours, cards, charts) lives in netscope/ui.py;
+this file only decides what to show on each page.
 """
 
 from __future__ import annotations
 
 import os
 import tempfile
+from html import escape
 
-import altair as alt  # charting library bundled with Streamlit
 import pandas as pd
 import streamlit as st
 
 from netscope import filters
 from netscope import protocol_analyzer as pa
 from netscope import traffic_statistics as ts
+from netscope import ui
 from netscope.packet_parser import CaptureFileError, parse_capture
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ALLOWED_EXTENSIONS = ("pcap", "pcapng")
-SAMPLE_CAPTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "sample_data", "sample_capture.pcap")
-PAGES = ["Overview", "Packet Explorer", "Protocol Analysis", "About Project"]
+SAMPLE_CAPTURE = os.path.join(APP_DIR, "sample_data", "sample_capture.pcap")
+LOGO = os.path.join(APP_DIR, "assets", "logo.svg")
+LOGO_MARK = os.path.join(APP_DIR, "assets", "mark.svg")
 
 # Table column names shown to the user (internal name -> display name).
 TABLE_COLUMNS = {
@@ -36,7 +41,7 @@ TABLE_COLUMNS = {
     "length": "Packet Length",
 }
 
-st.set_page_config(page_title="NetScope", page_icon="🔎", layout="wide")
+st.set_page_config(page_title="NetScope · Packet Analyzer", page_icon=LOGO_MARK, layout="wide")
 
 
 def max_upload_mb() -> int:
@@ -68,18 +73,23 @@ def analyze_capture(file_bytes: bytes, file_name: str):
 
 
 def handle_upload():
-    """Sidebar upload widget and sample option. Returns (df, info) or (None, None).
+    """Sidebar upload widget and sample option.
 
-    An uploaded file always takes priority over the built-in sample capture.
+    Returns (df, info, file_name) or (None, None, None). An uploaded file always
+    takes priority over the built-in sample capture.
     """
-    st.sidebar.subheader("Capture file")
+    ui.side_label("Capture file")
     uploaded = st.sidebar.file_uploader(
         "Upload a Wireshark capture",
         type=list(ALLOWED_EXTENSIONS),
         help=f"PCAP or PCAPNG file, up to {max_upload_mb()} MB.",
+        label_visibility="collapsed",
     )
 
-    st.sidebar.markdown("**No capture file? Try the demo**")
+    ui.side_label("No capture file? Try the demo")
+    # Remember the demo choice in the URL (?demo=1) so a page refresh keeps it.
+    if "use_sample" not in st.session_state:
+        st.session_state.use_sample = st.query_params.get("demo") == "1"
     use_sample = st.sidebar.toggle(
         "Use sample capture",
         key="use_sample",
@@ -87,38 +97,39 @@ def handle_upload():
         help="Loads a built-in demo file (synthetic packets, no real traffic) covering "
              "ARP, IPv4, IPv6, TCP, UDP, ICMP, ICMPv6 and DNS.",
     )
+    if use_sample and uploaded is None:
+        st.query_params["demo"] = "1"
+    elif "demo" in st.query_params:
+        del st.query_params["demo"]
 
     if uploaded is not None:
         ext = uploaded.name.rsplit(".", 1)[-1].lower() if "." in uploaded.name else ""
         if ext not in ALLOWED_EXTENSIONS:
             st.sidebar.error("Only .pcap and .pcapng files are supported.")
-            return None, None
+            return None, None, None
         if uploaded.size > max_upload_mb() * 1024 * 1024:
             st.sidebar.error(f"File is larger than the {max_upload_mb()} MB limit.")
-            return None, None
+            return None, None, None
         file_name, file_bytes = uploaded.name, uploaded.getvalue()
     elif use_sample:
         file_name = os.path.basename(SAMPLE_CAPTURE)
         with open(SAMPLE_CAPTURE, "rb") as fh:
             file_bytes = fh.read()
     else:
-        return None, None
+        return None, None, None
 
     try:
         with st.spinner(f"Parsing {file_name} with Scapy..."):
             df, info = analyze_capture(file_bytes, file_name)
     except CaptureFileError as exc:
         st.sidebar.error(str(exc))
-        return None, None
+        return None, None, None
     except Exception as exc:  # unexpected problem: report it, do not crash
         st.sidebar.error(f"Unexpected error while reading the file: {exc}")
-        return None, None
+        return None, None, None
 
-    label = "sample capture" if uploaded is None else file_name
-    st.sidebar.success(
-        f"Loaded **{label}**  \n"
-        f"{info['packet_count']:,} packets · {info['format'].upper()} format"
-    )
+    ui.side_label("Active capture")
+    ui.file_card(file_name, info["packet_count"], info["format"], is_sample=uploaded is None)
     if info["warning"]:
         st.sidebar.warning(info["warning"])
     if info["malformed_count"]:
@@ -126,172 +137,190 @@ def handle_upload():
             f"{info['malformed_count']} packet(s) could not be fully decoded and are "
             "listed as 'Other / Not Detected'."
         )
-    return df, info
+    return df, info, file_name
+
+
+# The capture loaded for this run (set in main(), read by the page functions).
+CAPTURE: dict = {"df": None, "info": None, "name": None}
 
 
 # ---------------------------------------------------------------------------
-# Small UI helpers
+# Small helpers
 # ---------------------------------------------------------------------------
-def empty_state():
-    st.info("No capture file loaded. Upload a **.pcap** or **.pcapng** file from the sidebar, "
-            "or switch on **Use sample capture** to see a demo.")
-    st.markdown(
-        """
-        **How to get a capture file**
-        1. Open **Wireshark** and select your network interface (e.g. Wi-Fi or Ethernet).
-        2. Start a capture, browse a website or run `ping 8.8.8.8` / `nslookup example.com`, then stop it.
-        3. Choose **File → Save As…** and save as *pcapng* or *Wireshark/tcpdump – pcap*.
-        4. Upload the saved file using the sidebar.
-
-        Only capture traffic on networks you own or are authorized to analyze.
-        """
-    )
+def capture_chips(df: pd.DataFrame) -> list[tuple[str, str]]:
+    s = ts.summary(df)
+    return [
+        ("file", f"<b>{escape(str(CAPTURE['name']))}</b>"),
+        ("clock", f"{s['duration']:.2f} s span"),
+    ]
 
 
-def bar_chart(data: pd.DataFrame, category: str):
-    """Horizontal bar chart, bars in the same order as the rows, x-axis from 0."""
-    chart = (
-        alt.Chart(data)
-        .mark_bar(color="#1f6feb")
-        .encode(
-            x=alt.X("Packets:Q", title="Packets", scale=alt.Scale(domainMin=0),
-                    axis=alt.Axis(tickMinStep=1, format="d")),
-            y=alt.Y(f"{category}:N", title=None, sort=list(data[category]), axis=alt.Axis(labelLimit=220)),
-            tooltip=list(data.columns),
-        )
-        .properties(height=alt.Step(30))  # 30 px per bar so every label shows
-    )
-    st.altair_chart(chart, width="stretch")
+def card(key: str):
+    """A white rounded card (styled in ui.py via the 'card' key prefix)."""
+    return st.container(key=f"card_{key}")
 
 
-def distribution_chart(dist: pd.DataFrame, title: str, hide_zero: bool = False):
-    st.markdown(f"**{title}**")
-    data = dist[dist["Packets"] > 0] if hide_zero else dist
-    if data["Packets"].sum() == 0:
-        st.caption("No packets in this category.")
-        return
-    bar_chart(data, "Protocol")
+def distribution_card(key: str, dist: pd.DataFrame, title: str, subtitle: str, hide_zero: bool = False):
+    color = ui.LAYER_COLORS.get(title, ui.PRIMARY)
+    with card(key):
+        ui.card_title(title, subtitle, color)
+        data = dist[dist["Packets"] > 0] if hide_zero else dist
+        if data["Packets"].sum() == 0:
+            ui.muted("No packets in this category.")
+        else:
+            ui.bar_chart(data, "Protocol", color)
 
 
-def top_ip_chart(top: pd.DataFrame, title: str):
-    st.markdown(f"**{title}**")
-    if top.empty:
-        st.caption("No IP addresses found in this capture.")
-        return
-    bar_chart(top, "IP Address")  # already sorted by count
+def top_ip_card(key: str, top: pd.DataFrame, title: str, subtitle: str, color: str):
+    with card(key):
+        ui.card_title(title, subtitle, color)
+        if top.empty:
+            ui.muted("No IP addresses found in this capture.")
+        else:
+            ui.bar_chart(top, "IP Address", color)  # already sorted by count
 
 
-def key_value_table(rows: list[tuple[str, object]]):
-    """Render a two-column Field / Value table, showing '—' for missing values."""
-    clean = [(k, "—" if v is None or (not isinstance(v, str) and pd.isna(v)) else str(v)) for k, v in rows]
-    st.dataframe(pd.DataFrame(clean, columns=["Field", "Value"]), hide_index=True,
-                 width="stretch")
+def no_capture(eyebrow: str, title: str, subtitle: str):
+    ui.page_header(eyebrow, title, subtitle)
+    ui.empty_state()
+    ui.footer()
 
 
 # ---------------------------------------------------------------------------
 # Pages
 # ---------------------------------------------------------------------------
-def page_overview(df: pd.DataFrame):
-    st.header("Overview")
-    st.caption("Summary of every packet in the uploaded capture.")
+def page_overview():
+    df = CAPTURE["df"]
+    if df is None:
+        return no_capture("Dashboard", "Overview",
+                          "A high-level summary of every packet in your capture.")
+
+    ui.page_header("Dashboard", "Overview",
+                   "A high-level summary of every packet in your capture.", capture_chips(df))
 
     s = ts.summary(df)
-    cols = st.columns(5)
-    cols[0].metric("Total Packets Analyzed", f"{s['total_packets']:,}", border=True)
-    cols[1].metric("Total Captured Data", ts.format_bytes(s["total_bytes"]), border=True)
-    cols[2].metric("Unique Source IPs", f"{s['unique_src_ips']:,}", border=True)
-    cols[3].metric("Unique Destination IPs", f"{s['unique_dst_ips']:,}", border=True)
-    cols[4].metric("DNS Packets", f"{s['dns_packets']:,}", border=True)
-    st.caption(f"Capture duration: {s['duration']:.3f} seconds")
+    size_value, size_unit = ts.format_bytes(s["total_bytes"]).split(" ", 1)
+    ui.kpi_row([
+        {"label": "Packets analyzed", "value": f"{s['total_packets']:,}", "icon": "packets",
+         "color": ui.PRIMARY, "foot": "Every frame in the file"},
+        {"label": "Captured data", "value": size_value, "unit": size_unit, "icon": "data",
+         "color": "#7A5AF8", "foot": "Sum of frame lengths"},
+        {"label": "Unique sources", "value": f"{s['unique_src_ips']:,}", "icon": "source",
+         "color": "#0E9F8E", "foot": "Distinct source IPs"},
+        {"label": "Unique destinations", "value": f"{s['unique_dst_ips']:,}", "icon": "destination",
+         "color": "#F59E0B", "foot": "Distinct destination IPs"},
+        {"label": "DNS packets", "value": f"{s['dns_packets']:,}", "icon": "dns",
+         "color": "#E5484D", "foot": "Queries and responses"},
+    ])
 
-    st.subheader("Protocol distribution")
-    c1, c2, c3 = st.columns(3)
+    ui.section("Protocol distribution",
+               "Each packet is classified once per layer of the TCP/IP model. Grey bars are packets "
+               "that do not belong to a recognised protocol at that layer.")
+    c1, c2, c3 = st.columns(3, gap="small")
     with c1:
-        distribution_chart(pa.network_distribution(df), "Network Layer")
+        distribution_card("net", pa.network_distribution(df), "Network Layer", "IPv4 · IPv6 · ARP")
     with c2:
-        distribution_chart(pa.transport_distribution(df), "Transport Layer")
+        distribution_card("tra", pa.transport_distribution(df), "Transport Layer", "TCP · UDP · ICMP · ICMPv6")
     with c3:
-        distribution_chart(pa.application_distribution(df), "Application Layer")
+        distribution_card("app", pa.application_distribution(df), "Application Layer", "DNS (decoded headers)")
 
-    st.subheader("Top talkers")
-    c1, c2 = st.columns(2)
+    ui.section("Top talkers", "The hosts that sent and received the most packets.")
+    c1, c2 = st.columns(2, gap="small")
     with c1:
-        top_ip_chart(ts.top_ips(df, "src_ip"), "Top 5 Source IP Addresses")
+        top_ip_card("src", ts.top_ips(df, "src_ip"), "Top source IPs", "Top 5 by packets sent",
+                    ui.TALKER_COLORS["src"])
     with c2:
-        top_ip_chart(ts.top_ips(df, "dst_ip"), "Top 5 Destination IP Addresses")
+        top_ip_card("dst", ts.top_ips(df, "dst_ip"), "Top destination IPs", "Top 5 by packets received",
+                    ui.TALKER_COLORS["dst"])
+    ui.footer()
 
 
-def page_packet_explorer(df: pd.DataFrame):
-    st.header("Packet Explorer")
-    st.caption("Filter the packet list and click a row to inspect its metadata.")
+def page_packet_explorer():
+    df = CAPTURE["df"]
+    if df is None:
+        return no_capture("Inspect", "Packet Explorer",
+                          "Filter the packet list and drill into any packet layer by layer.")
 
-    c1, c2, c3 = st.columns([2, 1, 1])
-    protocols = c1.multiselect(
-        "Protocol", list(filters.PROTOCOL_FILTERS),
-        help="Shows packets matching ANY selected protocol.",
-    )
-    src_ip = c2.text_input("Source IP contains", placeholder="e.g. 192.168.1.5")
-    dst_ip = c3.text_input("Destination IP contains", placeholder="e.g. 8.8.8.8")
+    ui.page_header("Inspect", "Packet Explorer",
+                   "Filter the packet list, then select a row to inspect its headers layer by layer.",
+                   capture_chips(df))
+
+    with card("filters"):
+        c1, c2, c3 = st.columns([2, 1, 1])
+        protocols = c1.multiselect(
+            "Protocol", list(filters.PROTOCOL_FILTERS), placeholder="All protocols",
+            help="Shows packets matching ANY selected protocol.",
+        )
+        src_ip = c2.text_input("Source IP contains", placeholder="e.g. 192.168.1.5")
+        dst_ip = c3.text_input("Destination IP contains", placeholder="e.g. 8.8.8.8")
 
     view = filters.apply_filters(df, protocols, src_ip, dst_ip)
-    st.markdown(f"Showing **{len(view):,}** of **{len(df):,}** packets")
 
-    if view.empty:
-        st.warning("No packets match the selected filters.")
-        return
-
-    table = view[list(TABLE_COLUMNS)].rename(columns=TABLE_COLUMNS)
-    for col in ("Source Port", "Destination Port"):
-        table[col] = table[col].astype("string").fillna("")
-    event = st.dataframe(
-        table, hide_index=True, width="stretch", height=380,
-        on_select="rerun", selection_mode="single-row", key="packet_table",
-        column_config={
-            "Packet No.": st.column_config.NumberColumn(format="%d", width="small"),
-            # Ports shown as plain text so that "no port" (ARP, ICMP) appears blank.
-            "Source Port": st.column_config.TextColumn(),
-            "Destination Port": st.column_config.TextColumn(),
-            "Packet Length": st.column_config.NumberColumn(format="%d bytes"),
-        },
-    )
-
-    selected_rows = event.selection.rows if event and event.selection else []
-    if selected_rows:
-        packet = view.iloc[selected_rows[0]]
-    else:
-        number = st.number_input(
-            "Or enter a packet number to inspect", min_value=1, max_value=len(df),
-            value=int(view.iloc[0]["packet_no"]), step=1,
+    with card("table"):
+        ui.card_title("Packets", f"Showing {len(view):,} of {len(df):,} packets · click a row to inspect it")
+        if view.empty:
+            ui.muted("No packets match the selected filters. Try clearing a filter above.")
+            ui.footer()
+            return
+        table = view[list(TABLE_COLUMNS)].rename(columns=TABLE_COLUMNS)
+        for col in ("Source Port", "Destination Port"):
+            table[col] = table[col].astype("string").fillna("")
+        event = st.dataframe(
+            table, hide_index=True, width="stretch", height=400,
+            on_select="rerun", selection_mode="single-row", key="packet_table",
+            column_config={
+                "Packet No.": st.column_config.NumberColumn("No.", format="%d", width="small"),
+                # Ports shown as plain text so that "no port" (ARP, ICMP) appears blank.
+                "Source Port": st.column_config.TextColumn(),
+                "Destination Port": st.column_config.TextColumn(),
+                "Packet Length": st.column_config.NumberColumn("Length", format="%d B"),
+            },
         )
-        packet = df[df["packet_no"] == number].iloc[0]
+        selected_rows = event.selection.rows if event and event.selection else []
+        if selected_rows:
+            packet = view.iloc[selected_rows[0]]
+        else:
+            c1, _ = st.columns([1, 3])
+            number = c1.number_input(
+                "Or enter a packet number to inspect", min_value=1, max_value=len(df),
+                value=int(view.iloc[0]["packet_no"]), step=1,
+            )
+            packet = df[df["packet_no"] == number].iloc[0]
 
     show_packet_details(packet)
+    ui.footer()
 
 
 def show_packet_details(p: pd.Series):
-    st.subheader(f"Packet #{int(p['packet_no'])} details")
+    ui.section(f"Packet #{int(p['packet_no'])}",
+               "Header metadata decoded by Scapy, from the outermost layer inwards. "
+               "Application payloads are never displayed or stored.")
     if p["parse_error"]:
         st.warning(p["parse_error"])
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Frame**")
-        key_value_table([
+    c1, c2 = st.columns(2, gap="small")
+    with c1, card("frame"):
+        ui.card_title("Frame", "Capture metadata", "#475569")
+        ui.kv_list([
             ("Packet number", int(p["packet_no"])),
             ("Timestamp", p["time"]),
             ("Time since first packet (s)", p["relative_time"]),
             ("Packet length", f"{int(p['length'])} bytes"),
         ])
-        st.markdown("**Data Link Layer (Ethernet)**")
-        key_value_table([("Source MAC", p["src_mac"]), ("Destination MAC", p["dst_mac"])])
-        st.markdown("**Network Layer**")
+    with c2, card("eth"):
+        ui.card_title("Data Link Layer", "Ethernet", "#94A3B8")
+        ui.kv_list([("Source MAC", p["src_mac"]), ("Destination MAC", p["dst_mac"])])
+
+    c1, c2, c3 = st.columns(3, gap="small")
+    with c1, card("netl"):
+        ui.card_title("Network Layer", str(p["network_protocol"]), ui.LAYER_COLORS["Network Layer"])
         rows = [("Protocol", p["network_protocol"]),
                 ("Source IP", p["src_ip"]), ("Destination IP", p["dst_ip"])]
         if p["network_protocol"] == "ARP":
             rows.append(("ARP operation", p["arp_operation"]))
-        key_value_table(rows)
-    with c2:
-        st.markdown("**Transport Layer**")
+        ui.kv_list(rows)
+    with c2, card("tral"):
+        ui.card_title("Transport Layer", str(p["transport_protocol"]), ui.LAYER_COLORS["Transport Layer"])
         rows = [("Protocol", p["transport_protocol"]),
                 ("Source port", p["src_port"]), ("Destination port", p["dst_port"])]
         if p["transport_protocol"] == "TCP":
@@ -301,136 +330,146 @@ def show_packet_details(p: pd.Series):
         if p["transport_protocol"] in ("ICMP", "ICMPv6"):
             rows += [("ICMP type", p["icmp_type"]), ("ICMP code", p["icmp_code"]),
                      ("Message", p["icmp_info"])]
-        key_value_table(rows)
-        st.markdown("**Application Layer**")
+        ui.kv_list(rows)
+    with c3, card("appl"):
+        ui.card_title("Application Layer", str(p["application_protocol"]),
+                      ui.LAYER_COLORS["Application Layer"])
         rows = [("Protocol", p["application_protocol"])]
         if p["application_protocol"] == "DNS":
             rows += [("DNS message", p["dns_direction"]),
                      ("Query domain", p["dns_query"]),
                      ("Query type", p["dns_query_type"])]
-        key_value_table(rows)
-    st.caption("Only header metadata is shown. Application payload contents are not displayed or stored.")
+        ui.kv_list(rows)
 
 
-def page_protocol_analysis(df: pd.DataFrame):
-    st.header("Protocol Analysis")
-    st.caption(
-        "Each packet is classified separately at the network, transport and application "
-        "layer, so every table below adds up to the total number of packets."
-    )
+def page_protocol_analysis():
+    df = CAPTURE["df"]
+    if df is None:
+        return no_capture("Analyze", "Protocol Analysis",
+                          "Layer-by-layer protocol breakdown, TCP handshakes, ICMP and DNS activity.")
 
-    for (layer, dist), col in zip(pa.layer_distributions(df).items(), st.columns(3)):
-        with col:
-            st.subheader(layer)
+    ui.page_header("Analyze", "Protocol Analysis",
+                   "Each packet is classified separately at the network, transport and application "
+                   "layer, so every table adds up to the total number of packets.", capture_chips(df))
+
+    subtitles = {"Network Layer": "IPv4 · IPv6 · ARP", "Transport Layer": "TCP · UDP · ICMP · ICMPv6",
+                 "Application Layer": "DNS (decoded headers)"}
+    cols = st.columns(3, gap="small")
+    for i, ((layer, dist), col) in enumerate(zip(pa.layer_distributions(df).items(), cols)):
+        with col, card(f"layer{i}"):
+            ui.card_title(layer, subtitles.get(layer, ""), ui.LAYER_COLORS.get(layer))
             st.dataframe(dist, hide_index=True, width="stretch",
-                         column_config={"Percentage": st.column_config.NumberColumn(format="%.2f %%")})
-            distribution_chart(dist, f"{layer} packets", hide_zero=True)
+                         column_config={"Percentage": st.column_config.ProgressColumn(
+                             "Share", format="%.1f%%", min_value=0, max_value=100)})
 
-    st.divider()
-    st.subheader("TCP analysis")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**TCP flag combinations**")
+    ui.section("TCP analysis", "Flag combinations and connections that completed the three-way handshake.")
+    c1, c2 = st.columns(2, gap="small")
+    with c1, card("flags"):
+        ui.card_title("TCP flag combinations", "How often each flag set appears", ui.LAYER_COLORS["Transport Layer"])
         flags = ts.tcp_flag_counts(df)
         if flags.empty:
-            st.caption("No TCP packets in this capture.")
+            ui.muted("No TCP packets in this capture.")
         else:
             st.dataframe(flags, hide_index=True, width="stretch")
-    with c2:
-        st.markdown("**Completed three-way handshakes (SYN → SYN-ACK → ACK)**")
+    with c2, card("hs"):
         hs = ts.find_tcp_handshakes(df)
+        ui.card_title("Three-way handshakes",
+                      f"SYN → SYN-ACK → ACK · {len(hs)} found" if not hs.empty else "SYN → SYN-ACK → ACK",
+                      "#12B76A")
         if hs.empty:
-            st.caption("No complete TCP handshakes found.")
+            ui.muted("No complete TCP handshakes found.")
         else:
-            st.caption(f"{len(hs)} handshake(s) found")
             st.dataframe(hs, hide_index=True, width="stretch")
 
-    st.divider()
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("ICMP / ICMPv6 messages")
+    ui.section("Control & name resolution", "ICMP messages (e.g. ping) and the most queried domains.")
+    c1, c2 = st.columns(2, gap="small")
+    with c1, card("icmp"):
+        ui.card_title("ICMP / ICMPv6 messages", "Echo, unreachable and other control messages", "#F59E0B")
         icmp = ts.icmp_type_counts(df)
         if icmp.empty:
-            st.caption("No ICMP or ICMPv6 packets in this capture.")
+            ui.muted("No ICMP or ICMPv6 packets in this capture.")
         else:
             st.dataframe(icmp, hide_index=True, width="stretch")
-    with c2:
-        st.subheader("Top queried DNS domains")
+    with c2, card("dns"):
+        ui.card_title("Top queried DNS domains", "Names looked up in DNS queries", ui.LAYER_COLORS["Application Layer"])
         dns = ts.top_dns_queries(df)
         if dns.empty:
-            st.caption("No DNS queries in this capture.")
+            ui.muted("No DNS queries in this capture.")
         else:
             st.dataframe(dns, hide_index=True, width="stretch")
 
-    with st.expander("How classification works"):
+    st.write("")
+    with st.expander("How classification works", icon=":material/info:"):
         st.markdown(
             f"""
-            - **Network layer** — IPv4, IPv6 or ARP, from the outermost decoded header.
+            - **Network layer**: IPv4, IPv6 or ARP, from the outermost decoded header.
               ARP has no IP header; its sender/target IP fields are used as addresses.
-            - **Transport layer** — TCP, UDP, ICMP or ICMPv6. ARP is *{pa.NOT_APPLICABLE}*
+            - **Transport layer**: TCP, UDP, ICMP or ICMPv6. ARP is *{pa.NOT_APPLICABLE}*
               because it has no transport layer. IP packets carrying other protocols
               (e.g. IGMP, GRE, or fragments) are *{pa.OTHER}*.
-            - **Application layer** — DNS is detected only when Scapy decodes a valid DNS
+            - **Application layer**: DNS is detected only when Scapy decodes a valid DNS
               header, not merely because port 53 is used. Other application protocols
               (HTTP, TLS…) are **not** guessed from port numbers and are shown as *{pa.OTHER}*.
             """
         )
+    ui.footer()
 
 
 def page_about():
-    st.header("About Project")
-    st.markdown(
-        """
-        **NetScope – Network Traffic Analysis and Packet Analyzer** is a Computer Networks
-        mini-project. It reads packets captured with **Wireshark** and analyzes them offline
-        using **Scapy**, then presents the results in this **Streamlit** dashboard.
-
-        #### Workflow
-        1. Capture traffic in Wireshark on a network you are authorized to analyze.
-        2. Save it as a PCAP or PCAPNG file.
-        3. Upload the file here. Scapy decodes each packet layer by layer.
-        4. NetScope extracts metadata (addresses, ports, flags, DNS names) and computes statistics.
-
-        #### Concepts demonstrated
-        - Packet structure and the layered TCP/IP model
-        - Ethernet MAC addressing and ARP
-        - IPv4 and IPv6 addressing
-        - TCP (flags, three-way handshake) and UDP
-        - ICMP / ICMPv6 (e.g. ping echo request and reply)
-        - DNS name resolution
-
-        #### Technologies
-        Python · Scapy · Pandas · Streamlit · Wireshark
-
-        #### Privacy
-        All processing happens locally. The uploaded file is written to a temporary file only
-        while it is parsed and is then deleted. Application payloads are never displayed.
-        """
-    )
+    ui.page_header("Project", "About NetScope",
+                   "A Computer Networks mini-project that reads packets captured with Wireshark, "
+                   "analyzes them offline with Scapy and presents the results in this dashboard.")
+    st.html("""
+    <div class="ns-grid2">
+      <div class="ns-tile"><h4>Workflow</h4><ol>
+        <li>Capture traffic in Wireshark on a network you are authorized to analyze.</li>
+        <li>Save it as a PCAP or PCAPNG file.</li>
+        <li>Upload the file here. Scapy decodes each packet layer by layer.</li>
+        <li>NetScope extracts metadata (addresses, ports, flags, DNS names) and computes statistics.</li>
+      </ol></div>
+      <div class="ns-tile"><h4>Concepts demonstrated</h4><ol>
+        <li>Packet structure and the layered TCP/IP model</li>
+        <li>Ethernet MAC addressing and ARP</li>
+        <li>IPv4 and IPv6 addressing</li>
+        <li>TCP (flags, three-way handshake) and UDP</li>
+        <li>ICMP / ICMPv6 (e.g. ping echo request and reply)</li>
+        <li>DNS name resolution</li>
+      </ol></div>
+      <div class="ns-tile"><h4>Technologies</h4><div class="ns-tags">
+        <span class="ns-tag">Python</span><span class="ns-tag">Scapy</span><span class="ns-tag">Pandas</span>
+        <span class="ns-tag">Streamlit</span><span class="ns-tag">Altair</span><span class="ns-tag">Wireshark</span>
+      </div></div>
+      <div class="ns-tile"><h4>Privacy</h4><p style="margin:0">All processing happens locally. An uploaded
+        file is written to a temporary file only while it is parsed and is then deleted. Application
+        payloads are never displayed.</p></div>
+    </div>""")
+    ui.footer()
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    st.sidebar.title("🔎 NetScope")
-    st.sidebar.caption("Network Traffic Analysis and Packet Analyzer")
-    page = st.sidebar.radio("Navigation", PAGES, label_visibility="collapsed")
-    st.sidebar.divider()
+    ui.inject_css()
+    st.logo(LOGO, icon_image=LOGO_MARK, size="large")
 
-    df, _info = handle_upload()
+    nav = st.navigation({
+        "Analyze": [
+            st.Page(page_overview, title="Overview", icon=":material/space_dashboard:",
+                    url_path="overview", default=True),
+            st.Page(page_packet_explorer, title="Packet Explorer", icon=":material/manage_search:",
+                    url_path="packets"),
+            st.Page(page_protocol_analysis, title="Protocol Analysis", icon=":material/lan:",
+                    url_path="protocols"),
+        ],
+        "Project": [
+            st.Page(page_about, title="About", icon=":material/info:", url_path="about"),
+        ],
+    })
 
-    if page == "About Project":
-        page_about()
-        return
-    if df is None:
-        st.header(page)
-        empty_state()
-        return
-
-    {"Overview": page_overview,
-     "Packet Explorer": page_packet_explorer,
-     "Protocol Analysis": page_protocol_analysis}[page](df)
+    df, info, name = handle_upload()
+    CAPTURE.update(df=df, info=info, name=name)
+    nav.run()
 
 
 if __name__ == "__main__":

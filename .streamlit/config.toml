@@ -6,9 +6,41 @@ maxUploadSize = 25
 [browser]
 gatherUsageStats = false
 
+[client]
+# Hide the "Deploy" button and developer menu for a clean presentation.
+toolbarMode = "viewer"
+
+# ---------------------------------------------------------------------------
+# NetScope brand theme (light mode only)
+# Colours are mirrored in netscope/ui.py; change them in both places.
+# ---------------------------------------------------------------------------
 [theme]
 base = "light"
-primaryColor = "#1f6feb"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f4f6f9"
-textColor = "#1c2430"
+primaryColor = "#3554F5"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F3F5FA"
+textColor = "#1E293B"
+linkColor = "#3554F5"
+linkUnderline = false
+borderColor = "#E6E9F0"
+dataframeBorderColor = "#EEF0F5"
+dataframeHeaderBackgroundColor = "#F7F8FB"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "10px"
+buttonRadius = "10px"
+baseFontSize = 15
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Plus Jakarta Sans:https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+headingFontWeights = [800, 700, 700, 600, 600, 600]
+codeBackgroundColor = "#F1F3F9"
+codeTextColor = "#3554F5"
+blueColor = "#3554F5"
+greenColor = "#0E9F6E"
+chartCategoricalColors = ["#3554F5", "#7A5AF8", "#0E9F8E", "#F59E0B", "#E5484D", "#94A3B8"]
+
+[theme.sidebar]
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F7FC"
+borderColor = "#E6E9F0"
