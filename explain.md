@@ -496,8 +496,8 @@ Start the app (`python -m streamlit run app.py`), open <http://localhost:8501>, 
 |---|---|---|---|
 | Packets analyzed | **72** | Number of rows in the packet table | One row per packet in the file |
 | Captured data | **10.12 KB** | Sum of all packet lengths ÷ 1024 | 10,361 bytes ÷ 1024 = 10.12 |
-| Unique sources | **10** | Count of different source IPs | Laptop, phone, router, 8.8.8.8, 4 websites, and 2 IPv6 addresses |
-| Unique destinations | **11** | Count of different destination IPs | Same 10 + `203.0.113.50`, which only *receives* UDP and never replies |
+| Source IPs | **10** | Count of different source IPs | Laptop, phone, router, 8.8.8.8, 4 websites, and 2 IPv6 addresses |
+| Destination IPs | **11** | Count of different destination IPs | Same 10 + `203.0.113.50`, which only *receives* UDP and never replies |
 | DNS packets | **10** | Packets whose DNS header was decoded | 5 queries + 5 responses |
 
 The chips at the top right show the file name and the time span (**10.47 s**).

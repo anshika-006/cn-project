@@ -205,10 +205,10 @@ def page_overview():
          "color": ui.PRIMARY, "foot": "Every frame in the file"},
         {"label": "Captured data", "value": size_value, "unit": size_unit, "icon": "data",
          "color": "#7A5AF8", "foot": "Sum of frame lengths"},
-        {"label": "Unique sources", "value": f"{s['unique_src_ips']:,}", "icon": "source",
-         "color": "#0E9F8E", "foot": "Distinct source IPs"},
-        {"label": "Unique destinations", "value": f"{s['unique_dst_ips']:,}", "icon": "destination",
-         "color": "#F59E0B", "foot": "Distinct destination IPs"},
+        {"label": "Source IPs", "value": f"{s['unique_src_ips']:,}", "icon": "source",
+         "color": "#0E9F8E", "foot": "Unique senders"},
+        {"label": "Destination IPs", "value": f"{s['unique_dst_ips']:,}", "icon": "destination",
+         "color": "#F59E0B", "foot": "Unique receivers"},
         {"label": "DNS packets", "value": f"{s['dns_packets']:,}", "icon": "dns",
          "color": "#E5484D", "foot": "Queries and responses"},
     ])
@@ -455,8 +455,8 @@ def main():
 
     nav = st.navigation({
         "Analyze": [
-            st.Page(page_overview, title="Overview", icon=":material/space_dashboard:",
-                    url_path="overview", default=True),
+            # The default page is always served at "/", so it gets no url_path.
+            st.Page(page_overview, title="Overview", icon=":material/space_dashboard:", default=True),
             st.Page(page_packet_explorer, title="Packet Explorer", icon=":material/manage_search:",
                     url_path="packets"),
             st.Page(page_protocol_analysis, title="Protocol Analysis", icon=":material/lan:",

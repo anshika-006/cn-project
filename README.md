@@ -84,7 +84,7 @@ netscope/
 ├── sample_data/               # Synthetic demo capture (sample_capture.pcap)
 ├── tools/make_sample_capture.py  # Rebuilds the demo capture with Scapy
 ├── .streamlit/config.toml     # Brand theme (fonts, colours) and 25 MB upload limit
-├── screenshots/               # Put your application screenshots here
+├── screenshots/               # App screenshots used in this README
 ├── requirements.txt
 ├── README.md
 ├── VIVA_PREPARATION.md
@@ -123,7 +123,7 @@ payloads (the data inside packets) are never displayed or stored.
 | Overview | Total packets, total captured bytes, unique source/destination IPs, DNS packet count, layer distribution charts, top 5 source and destination IPs |
 | Packet Explorer | Packet table, filters (TCP, UDP, ICMP, ICMPv6, DNS, ARP, IPv4, IPv6, source IP, destination IP), packet details panel |
 | Protocol Analysis | Per-layer tables with counts and percentages, TCP flag combinations, completed three-way handshakes, ICMP message types, top DNS domains |
-| About Project | Project summary |
+| About | Project summary: workflow, concepts, technologies, privacy |
 
 ## 8. Installation (Windows PowerShell)
 
@@ -136,10 +136,19 @@ Install Python 3.10 or newer from <https://www.python.org/downloads/> and tick
 python --version
 ```
 
-### 8.2 Install the dependencies
+### 8.2 Download the project
 
 ```powershell
-cd C:\Users\<your-name>\netscope
+git clone https://github.com/anshika-006/cn-project.git
+cd cn-project
+```
+
+Or use **Code → Download ZIP** on GitHub, extract it, and open PowerShell in the extracted
+`cn-project` folder.
+
+### 8.3 Install the dependencies
+
+```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
@@ -188,7 +197,7 @@ To save only some packets (e.g. after applying a display filter like `dns or icm
 ## 10. Running NetScope
 
 ```powershell
-cd C:\Users\<your-name>\netscope
+cd cn-project
 python -m streamlit run app.py
 ```
 
@@ -225,21 +234,23 @@ maxUploadSize = 25
 
 ## 11. Screenshots
 
-Screenshots are not included because they should show your own capture. To add them:
+Taken with the built-in demo file (**Use sample capture** switched on).
 
-1. Run NetScope and upload a capture.
-2. Take screenshots with **Win + Shift + S** of: Overview, Packet Explorer (with a packet
-   selected), Protocol Analysis, and an error message (e.g. after uploading a non-capture file).
-3. Save them in the `screenshots/` folder as `overview.png`, `packet_explorer.png`,
-   `protocol_analysis.png`, `error_handling.png`.
-4. Uncomment the lines below.
+**Overview:** summary tiles, protocol distribution per layer, top talkers
 
-<!--
 ![Overview](screenshots/overview.png)
+
+**Packet Explorer:** filters, packet table and layer-by-layer details (packet #13, a TCP SYN)
+
 ![Packet Explorer](screenshots/packet_explorer.png)
+
+**Protocol Analysis:** per-layer tables, TCP flags, three-way handshakes, ICMP and DNS
+
 ![Protocol Analysis](screenshots/protocol_analysis.png)
+
+**Error handling:** uploading a file that is not a real capture
+
 ![Error handling](screenshots/error_handling.png)
--->
 
 ## 12. Limitations
 
