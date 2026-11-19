@@ -1,0 +1,14 @@
+[server]
+# Maximum upload size in megabytes. NetScope reads this value too,
+# so change it here to raise or lower the capture file limit.
+maxUploadSize = 25
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#1f6feb"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f4f6f9"
+textColor = "#1c2430"

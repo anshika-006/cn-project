@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Capture files: never commit network traffic
+*.pcap
+*.pcapng
+*.cap
+# ...except the synthetic demo file (built by tools/make_sample_capture.py)
+!sample_data/sample_capture.pcap
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
