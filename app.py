@@ -26,6 +26,12 @@ from netscope.packet_parser import CaptureFileError, parse_capture
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ALLOWED_EXTENSIONS = ("pcap", "pcapng")
 SAMPLE_CAPTURE = os.path.join(APP_DIR, "sample_data", "sample_capture.pcap")
+# Built-in demo files (label -> path). "?demo=1" opens the first, "?demo=web" the second.
+SAMPLES = {
+    "Mixed protocols (72 packets)": SAMPLE_CAPTURE,
+    "Web traffic: HTTP, TLS, retransmissions": os.path.join(APP_DIR, "sample_data", "web_demo_capture.pcap"),
+}
+SAMPLE_KEYS = {"1": "Mixed protocols (72 packets)", "web": "Web traffic: HTTP, TLS, retransmissions"}
 LOGO = os.path.join(APP_DIR, "assets", "logo.svg")
 LOGO_MARK = os.path.join(APP_DIR, "assets", "mark.svg")
 
@@ -87,18 +93,26 @@ def handle_upload():
     )
 
     ui.side_label("No capture file? Try the demo")
-    # Remember the demo choice in the URL (?demo=1) so a page refresh keeps it.
+    # Remember the demo choice in the URL (?demo=1 or ?demo=web) so a page refresh keeps it.
     if "use_sample" not in st.session_state:
-        st.session_state.use_sample = st.query_params.get("demo") == "1"
+        st.session_state.use_sample = st.query_params.get("demo") in SAMPLE_KEYS
+        st.session_state.sample_choice = SAMPLE_KEYS.get(st.query_params.get("demo"), next(iter(SAMPLES)))
     use_sample = st.sidebar.toggle(
         "Use sample capture",
         key="use_sample",
         disabled=uploaded is not None or not os.path.exists(SAMPLE_CAPTURE),
-        help="Loads a built-in demo file (synthetic packets, no real traffic) covering "
-             "ARP, IPv4, IPv6, TCP, UDP, ICMP, ICMPv6 and DNS.",
+        help="Loads a built-in demo file (synthetic packets, no real traffic). The mixed file covers "
+             "ARP, IPv4, IPv6, TCP, UDP, ICMP, ICMPv6 and DNS; the web file covers HTTP, TLS "
+             "(with SNI), TCP retransmissions and RTT.",
     )
+    sample_path = SAMPLE_CAPTURE
     if use_sample and uploaded is None:
-        st.query_params["demo"] = "1"
+        choice = st.sidebar.selectbox("Demo file", list(SAMPLES), key="sample_choice",
+                                      label_visibility="collapsed")
+        if not os.path.exists(SAMPLES[choice]):
+            choice = next(iter(SAMPLES))
+        sample_path = SAMPLES[choice]
+        st.query_params["demo"] = next(k for k, v in SAMPLE_KEYS.items() if v == choice)
     elif "demo" in st.query_params:
         del st.query_params["demo"]
 
@@ -112,8 +126,8 @@ def handle_upload():
             return None, None, None
         file_name, file_bytes = uploaded.name, uploaded.getvalue()
     elif use_sample:
-        file_name = os.path.basename(SAMPLE_CAPTURE)
-        with open(SAMPLE_CAPTURE, "rb") as fh:
+        file_name = os.path.basename(sample_path)
+        with open(sample_path, "rb") as fh:
             file_bytes = fh.read()
     else:
         return None, None, None
@@ -213,6 +227,16 @@ def page_overview():
          "color": "#E5484D", "foot": "Queries and responses"},
     ])
 
+    ui.section("Traffic over time", "How many packets (or bytes) were captured in each time interval.")
+    with card("time"):
+        interval = ts.choose_interval(s["duration"])
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            ui.card_title("Traffic rate", f"Grouped into {interval:g}-second intervals", ui.PRIMARY)
+        metric = c2.segmented_control("Show", ["Packets", "Bytes"], default="Packets",
+                                      key="time_metric", label_visibility="collapsed") or "Packets"
+        ui.time_chart(ts.traffic_over_time(df, interval), metric, interval)
+
     ui.section("Protocol distribution",
                "Each packet is classified once per layer of the TCP/IP model. Grey bars are packets "
                "that do not belong to a recognised protocol at that layer.")
@@ -222,7 +246,8 @@ def page_overview():
     with c2:
         distribution_card("tra", pa.transport_distribution(df), "Transport Layer", "TCP · UDP · ICMP · ICMPv6")
     with c3:
-        distribution_card("app", pa.application_distribution(df), "Application Layer", "DNS (decoded headers)")
+        distribution_card("app", pa.application_distribution(df), "Application Layer",
+                          "DNS · HTTP · TLS (decoded headers)")
 
     ui.section("Top talkers", "The hosts that sent and received the most packets.")
     c1, c2 = st.columns(2, gap="small")
@@ -257,7 +282,16 @@ def page_packet_explorer():
     view = filters.apply_filters(df, protocols, src_ip, dst_ip)
 
     with card("table"):
-        ui.card_title("Packets", f"Showing {len(view):,} of {len(df):,} packets · click a row to inspect it")
+        c1, c2 = st.columns([3, 1], vertical_alignment="center")
+        with c1:
+            ui.card_title("Packets", f"Showing {len(view):,} of {len(df):,} packets · click a row to inspect it")
+        stem = os.path.splitext(str(CAPTURE["name"]))[0]
+        c2.download_button(
+            "Export CSV", data=filters.to_csv(view), file_name=f"{stem}_packets.csv",
+            mime="text/csv", icon=":material/download:", width="stretch",
+            disabled=view.empty, help="Download the metadata of the packets shown below "
+                                      "(all columns, after filters). No payload bytes are included.",
+        )
         if view.empty:
             ui.muted("No packets match the selected filters. Try clearing a filter above.")
             ui.footer()
@@ -326,7 +360,9 @@ def show_packet_details(p: pd.Series):
         if p["transport_protocol"] == "TCP":
             rows += [("TCP flags", p["tcp_flags"] or "(none)"),
                      ("Sequence number", p["tcp_seq"]),
-                     ("Acknowledgement number", p["tcp_ack"])]
+                     ("Acknowledgement number", p["tcp_ack"]),
+                     ("Payload length", f"{int(p['tcp_payload_len'])} bytes"
+                      if pd.notna(p["tcp_payload_len"]) else None)]
         if p["transport_protocol"] in ("ICMP", "ICMPv6"):
             rows += [("ICMP type", p["icmp_type"]), ("ICMP code", p["icmp_code"]),
                      ("Message", p["icmp_info"])]
@@ -339,6 +375,16 @@ def show_packet_details(p: pd.Series):
             rows += [("DNS message", p["dns_direction"]),
                      ("Query domain", p["dns_query"]),
                      ("Query type", p["dns_query_type"])]
+        elif p["application_protocol"] == "HTTP":
+            is_request = str(p["http_info"]).split(" ")[0] in pa.HTTP_METHODS
+            rows += [("HTTP message", "Request" if is_request else "Response"),
+                     ("Request line" if is_request else "Status", p["http_info"])]
+            if is_request:
+                rows.append(("Host", p["http_host"]))
+        elif p["application_protocol"] == "TLS":
+            rows += [("TLS records", p["tls_message"]), ("Version", p["tls_version"])]
+            if p["tls_sni"]:
+                rows.append(("Server name (SNI)", p["tls_sni"]))
         ui.kv_list(rows)
 
 
@@ -353,7 +399,7 @@ def page_protocol_analysis():
                    "layer, so every table adds up to the total number of packets.", capture_chips(df))
 
     subtitles = {"Network Layer": "IPv4 · IPv6 · ARP", "Transport Layer": "TCP · UDP · ICMP · ICMPv6",
-                 "Application Layer": "DNS (decoded headers)"}
+                 "Application Layer": "DNS · HTTP · TLS (decoded headers)"}
     cols = st.columns(3, gap="small")
     for i, ((layer, dist), col) in enumerate(zip(pa.layer_distributions(df).items(), cols)):
         with col, card(f"layer{i}"):
@@ -379,7 +425,63 @@ def page_protocol_analysis():
         if hs.empty:
             ui.muted("No complete TCP handshakes found.")
         else:
-            st.dataframe(hs, hide_index=True, width="stretch")
+            st.dataframe(hs, hide_index=True, width="stretch",
+                         column_config={"Handshake RTT (ms)": st.column_config.NumberColumn(
+                             "RTT (ms)", format="%.3f",
+                             help="Time from the SYN to the SYN-ACK: one round trip to the server.")})
+
+    with card("retx"):
+        retx = ts.tcp_retransmissions(df)
+        ui.card_title("Retransmissions",
+                      f"Segments sent again with the same sequence number · {len(retx)} found",
+                      "#E5484D")
+        if retx.empty:
+            ui.muted("No retransmitted TCP segments in this capture.")
+        else:
+            st.dataframe(retx, hide_index=True, width="stretch")
+    st.write("")
+    with card("rtt"):
+        rtt = ts.tcp_rtt(df)
+        ui.card_title("Round-trip time per connection",
+                      "Time from a segment to the ACK that covers it (retransmitted segments skipped)",
+                      "#12B76A")
+        if rtt.empty:
+            ui.muted("No TCP connections in this capture.")
+        else:
+            st.dataframe(rtt, hide_index=True, width="stretch",
+                         column_config={c: st.column_config.NumberColumn(c, format="%.3f")
+                                        for c in ("Min RTT (ms)", "Avg RTT (ms)", "Max RTT (ms)")})
+
+    ui.section("Web traffic", "HTTP requests and TLS server names, read from the protocol headers.")
+    c1, c2 = st.columns(2, gap="small")
+    with c1, card("http"):
+        ui.card_title("HTTP requests", "Request line, Host header and the server's status reply",
+                      ui.LAYER_COLORS["Application Layer"])
+        http = ts.http_requests(df)
+        if http.empty:
+            ui.muted("No HTTP requests in this capture.")
+        else:
+            st.dataframe(http, hide_index=True, width="stretch")
+    with c2, card("tls"):
+        ui.card_title("TLS server names", "SNI host names sent in TLS Client Hello messages",
+                      ui.LAYER_COLORS["Application Layer"])
+        sni = ts.tls_server_names(df)
+        if sni.empty:
+            ui.muted("No TLS Client Hello messages in this capture.")
+        else:
+            st.dataframe(sni, hide_index=True, width="stretch")
+
+    ui.section("Conversations", "Packets and bytes exchanged between each pair of IP addresses "
+                                "(A is the address that sent first).")
+    with card("conv"):
+        conv = ts.conversations(df)
+        ui.card_title("IP conversations", f"{len(conv)} address pairs", ui.PRIMARY)
+        if conv.empty:
+            ui.muted("No IPv4 or IPv6 packets in this capture.")
+        else:
+            st.dataframe(conv, hide_index=True, width="stretch",
+                         column_config={c: st.column_config.NumberColumn(c, format="%d B")
+                                        for c in ("Bytes", "Bytes A→B", "Bytes B→A")})
 
     ui.section("Control & name resolution", "ICMP messages (e.g. ping) and the most queried domains.")
     c1, c2 = st.columns(2, gap="small")
@@ -408,8 +510,15 @@ def page_protocol_analysis():
               because it has no transport layer. IP packets carrying other protocols
               (e.g. IGMP, GRE, or fragments) are *{pa.OTHER}*.
             - **Application layer**: DNS is detected only when Scapy decodes a valid DNS
-              header, not merely because port 53 is used. Other application protocols
-              (HTTP, TLS…) are **not** guessed from port numbers and are shown as *{pa.OTHER}*.
+              header, not merely because port 53 is used. HTTP is detected from a valid
+              request line (e.g. `GET / HTTP/1.1`) or status line (`HTTP/1.1 200 OK`), and
+              TLS from a valid record header (content type 20–23, version 3.x); the SNI name
+              is read from the Client Hello. Ports are **never** used to guess a protocol, so
+              encrypted or unrecognised payloads are shown as *{pa.OTHER}*.
+            - **Retransmission**: a TCP segment that repeats a sequence number already sent
+              with data (or SYN/FIN) in the same direction.
+            - **RTT**: time from a segment to the first ACK that acknowledges it;
+              retransmitted segments are skipped (Karn's algorithm).
             """
         )
     ui.footer()
@@ -434,6 +543,8 @@ def page_about():
         <li>TCP (flags, three-way handshake) and UDP</li>
         <li>ICMP / ICMPv6 (e.g. ping echo request and reply)</li>
         <li>DNS name resolution</li>
+        <li>HTTP requests and TLS handshakes (SNI)</li>
+        <li>TCP retransmission and round-trip time</li>
       </ol></div>
       <div class="ns-tile"><h4>Technologies</h4><div class="ns-tags">
         <span class="ns-tag">Python</span><span class="ns-tag">Scapy</span><span class="ns-tag">Pandas</span>

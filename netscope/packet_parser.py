@@ -6,7 +6,8 @@ a small metadata record (a plain dictionary). The list of records is then
 turned into a pandas DataFrame that the rest of the application uses.
 
 Only header metadata is extracted (addresses, ports, lengths, flags, DNS query
-name). Application payload bytes are never stored or displayed.
+name, HTTP start line and Host, TLS record type, version and SNI). Application
+payload bytes are never stored or displayed.
 """
 
 from __future__ import annotations
@@ -55,9 +56,15 @@ COLUMNS = [
     "src_port", "dst_port", # TCP / UDP ports only
     "length",               # captured length in bytes
     "tcp_flags", "tcp_seq", "tcp_ack",
+    "tcp_payload_len",      # bytes of TCP payload (used for retransmission / RTT)
     "icmp_type", "icmp_code", "icmp_info",
     "arp_operation",
     "dns_query", "dns_query_type", "dns_direction",
+    "http_info",            # HTTP request line ("GET /x") or status ("200 OK")
+    "http_host",            # HTTP Host header of a request
+    "tls_message",          # TLS record / handshake type, e.g. "Client Hello"
+    "tls_version",          # e.g. "TLS 1.3"
+    "tls_sni",              # Server Name Indication from a Client Hello
     "parse_error",          # set if this packet could not be fully decoded
 ]
 
@@ -215,6 +222,7 @@ def extract_metadata(pkt: Packet, packet_no: int) -> dict[str, Any]:
             record["tcp_flags"] = format_tcp_flags(trans_layer.flags)
             record["tcp_seq"] = int(trans_layer.seq)
             record["tcp_ack"] = int(trans_layer.ack)
+            record["tcp_payload_len"] = len(pa.tcp_payload(pkt))
         elif transport == "ICMP":
             record["icmp_type"] = int(trans_layer.type)
             record["icmp_code"] = int(trans_layer.code)
@@ -224,8 +232,22 @@ def extract_metadata(pkt: Packet, packet_no: int) -> dict[str, Any]:
             record["icmp_code"] = int(getattr(trans_layer, "code", 0) or 0)
             record["icmp_info"] = icmp6types.get(record["icmp_type"], "Unknown")
 
-        # --- Layer 7: application protocol (DNS only) ---------------------
+        # --- Layer 7: application protocol (DNS, HTTP, TLS) ---------------
+        # Only header fields are kept: HTTP start line + Host, TLS record
+        # type, version and SNI. Bodies and encrypted data are never stored.
         application = pa.classify_application(pkt)
+        if application == "HTTP":
+            http = pa.parse_http(pa.tcp_payload(pkt))
+            if http["kind"] == "Request":
+                record["http_info"] = f"{http['method']} {http['uri']}"
+                record["http_host"] = http["host"]
+            else:
+                record["http_info"] = http["status"]
+        elif application == "TLS":
+            tls = pa.parse_tls(pa.tcp_payload(pkt))
+            record["tls_message"] = tls["message"]
+            record["tls_version"] = tls["version"]
+            record["tls_sni"] = tls.get("sni")
         if application == "DNS":
             dns = pa.get_dns_layer(pkt)
             record["dns_direction"] = "Response" if dns.qr == 1 else "Query"
@@ -259,7 +281,8 @@ def records_to_dataframe(records: list[dict[str, Any]]) -> pd.DataFrame:
     """Convert records to a DataFrame with proper column types."""
     df = pd.DataFrame(records, columns=COLUMNS)
     # Nullable integers so that "no port" shows as empty instead of NaN/float.
-    for col in ["src_port", "dst_port", "tcp_seq", "tcp_ack", "icmp_type", "icmp_code"]:
+    for col in ["src_port", "dst_port", "tcp_seq", "tcp_ack", "tcp_payload_len",
+                "icmp_type", "icmp_code"]:
         df[col] = df[col].astype("Int64")
     df["length"] = df["length"].fillna(0).astype(int)
     if len(df) and df["timestamp"].notna().any():

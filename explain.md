@@ -3,9 +3,11 @@
 This guide explains **everything** about NetScope in simple words: the networking theory,
 the sample demo file, every screen of the app, and how the code works.
 
-All examples use the built-in demo file **`sample_data/sample_capture.pcap`**, so you can
+Most examples use the built-in demo file **`sample_data/sample_capture.pcap`**, so you can
 open the app, switch on **Use sample capture**, and see every number in this guide on your
-own screen.
+own screen. The newer features (HTTP and TLS detection, retransmissions, round-trip time)
+are shown with a second demo file, **`sample_data/web_demo_capture.pcap`**, which you pick
+from the drop-down under the same switch (section 5.5).
 
 ---
 
@@ -15,7 +17,7 @@ own screen.
 2. [Networking basics you need first](#2-networking-basics-you-need-first)
 3. [The protocols, one by one (with real packets)](#3-the-protocols-one-by-one-with-real-packets)
 4. [Capture files: Wireshark, PCAP and PCAPNG](#4-capture-files-wireshark-pcap-and-pcapng)
-5. [The sample demo file](#5-the-sample-demo-file)
+5. [The sample demo files](#5-the-sample-demo-files)
 6. [Walkthrough of the app using the sample](#6-walkthrough-of-the-app-using-the-sample)
 7. [How the code works](#7-how-the-code-works)
 8. [Packet sizes: where every byte comes from](#8-packet-sizes-where-every-byte-comes-from)
@@ -63,7 +65,7 @@ the letters (payloads). That is a privacy rule built into the project.
 | **Scapy** | Python library that decodes packet bytes into layers (Ethernet → IP → TCP…) |
 | **Pandas** | Stores all packets as a table (DataFrame) and does counting/statistics |
 | **Streamlit** | Turns the Python script into a web dashboard |
-| **Altair** | Draws the bar charts |
+| **Altair** | Draws the bar charts and the traffic-over-time chart |
 | **pytest** | Runs the automated tests |
 
 ---
@@ -358,14 +360,100 @@ sample repeats this for `example.com`, `wikipedia.org`, `github.com` and `python
 
 **DNS packets in total:** 5 queries + 5 responses = **10**.
 
-### 3.10 HTTPS / TLS: why they appear as "Other / Not Detected"
+### 3.10 HTTP: the web's request/response protocol
 
-The 40 packets to port 443 are web traffic (HTTPS). Their payload is encrypted with
-**TLS**, so nobody in between can read it. NetScope's rule is: **only label a protocol if
-its header was actually decoded**, never guess from the port number. TLS is not decoded,
-so these packets are labeled **TCP** at the transport layer and **"Other / Not Detected"**
-at the application layer. This is a deliberate, honest design choice (a packet on port 443
-*could* be something else).
+**HTTP** (HyperText Transfer Protocol) runs over TCP, usually on port **80**. HTTP/1.x is
+plain text: the browser sends a **request**, the server sends back a **response**.
+
+```
+ Request (browser -> server)          Response (server -> browser)
+ GET /index.html HTTP/1.1             HTTP/1.1 200 OK
+ Host: example.com                    Content-Type: text/html
+ User-Agent: ...                      Content-Length: 35
+ (blank line)                         (blank line)
+                                      <html>...  (the body)
+```
+
+- The first line of a request is the **request line**: *method* (GET, POST, …), *path*
+  (`/index.html`) and *version*. The **Host** header names the website, because one server
+  can host many sites on the same IP address.
+- The first line of a response is the **status line**: version, a 3-digit **status code**
+  and a reason phrase (`200 OK`, `404 Not Found`, `301 Moved Permanently`).
+
+**How NetScope detects HTTP:** it looks at the first bytes of the TCP payload. The packet is
+labeled HTTP only if the first line is a well-formed request line (a known method, a path and
+`HTTP/1.0` or `HTTP/1.1`) or a well-formed status line (`HTTP/1.x` followed by a code from
+100 to 599). NetScope keeps only the request line, the Host header and the status. The body
+is never stored. Because it reads the content, HTTP on an unusual port (e.g. 8080) is still
+found, and text such as `GETTING started…` is **not** mistaken for HTTP.
+
+### 3.11 HTTPS and TLS: encryption, and what can still be seen
+
+**HTTPS** is HTTP sent inside an encrypted **TLS** (Transport Layer Security) connection,
+usually on port **443**. Nobody in between can read the pages, but the start of the
+connection, the **TLS handshake**, still has readable headers.
+
+Every TLS message travels in a **record** with a 5-byte header:
+
+| Byte(s) | Field | Values |
+|---|---|---|
+| 1 | Content type | 20 Change Cipher Spec · 21 Alert · **22 Handshake** · 23 Application Data |
+| 2 | Version | `3,1` = TLS 1.0 … `3,3` = TLS 1.2 (TLS 1.3 also writes `3,3` here) |
+| 2 | Length | size of the record that follows |
+
+The TLS 1.3 handshake, as seen in a capture:
+
+```
+ Client                                           Server
+   | --- Client Hello (SNI = www.wikipedia.org) ---> |   readable
+   | <-- Server Hello + Change Cipher Spec + ...  --- |   Server Hello readable,
+   |                                                  |   the rest is encrypted
+   | <========= Application Data (encrypted) =======> |   unreadable
+```
+
+- The **Client Hello** carries the **SNI** (Server Name Indication) extension: the name of the
+  website the client wants (e.g. `www.wikipedia.org`), so a server with many sites can pick
+  the right certificate. The SNI is sent *before* encryption starts, so it is visible.
+- Which version is really used? TLS 1.3 keeps writing "TLS 1.2" in old fields for
+  compatibility. The real versions are in the **supported_versions** extension. The client
+  lists what it supports and the server's Server Hello names the one chosen.
+
+**How NetScope detects TLS:** a packet is labeled TLS only if its TCP payload starts with a
+valid record header (content type 20–23, version 3.x, a sensible length). NetScope then reads
+the record types (e.g. "Server Hello, Change Cipher Spec, Application Data"), the version
+from the Hello's supported_versions extension, and the SNI from a Client Hello. When there is
+no Hello, only the record header's version is known, so it is shown as
+"TLS 1.2 (record layer)", the same way Wireshark does. The encrypted data is never stored.
+
+**Why the 40 port-443 packets in the mixed sample are still "Other / Not Detected":** the
+synthetic file was built with **random bytes** as payload, not real TLS records. Their first
+byte is not 20–23, so they fail the record-header check. NetScope's rule is: **only label a
+protocol if its header was actually decoded, never guess from the port number.** A packet
+on port 443 *could* be something else, and here it really is.
+
+### 3.12 TCP reliability in practice: retransmission and round-trip time
+
+**Retransmission.** If a segment gets no acknowledgement in time, TCP assumes it was lost
+and **sends it again**, with the **same sequence number**. In a capture you therefore see two
+packets with the same sequence number and the same data, going the same way.
+
+```
+ Client                                  Server
+   | ---- data  seq=4180257615 (425 B) ---> X   lost
+   |                    ... about 300 ms, no ACK ...
+   | ---- data  seq=4180257615 (425 B) ---> |   retransmission: same seq, same size
+   | <--- ACK   ack=4180258040 ------------ |   = 4180257615 + 425
+```
+
+**Round-trip time (RTT)** is the time from sending a segment until its acknowledgement
+comes back. TCP measures it to decide how long to wait before retransmitting.
+
+**Karn's algorithm:** if a segment was sent twice and then acknowledged, you cannot tell
+whether the ACK answers the first copy or the second, so that measurement is thrown away.
+
+**Where the capture is taken matters.** On the client, "client sends → server ACKs" is a
+full trip across the network (tens of milliseconds). "Server sends → client ACKs" is just
+how quickly the client's own computer replied (often under 1 ms).
 
 ---
 
@@ -401,7 +489,7 @@ to see delays, e.g. the ping replies arrive 15–30 ms after the requests.
 
 ---
 
-## 5. The sample demo file
+## 5. The sample demo files
 
 ### 5.1 Why a synthetic file?
 
@@ -469,7 +557,47 @@ Each website visit (scene 3) is **12 packets**: 2 DNS + 3 handshake + 4 data/ACK
 | Unique destination IPs | 11 |
 | DNS packets | 10 |
 | Completed TCP handshakes | 4 |
+| HTTP / TLS packets | 0 / 0 (the port-443 payloads are random bytes, see 3.11) |
+| Retransmissions | 0 |
 | Malformed packets | 0 |
+
+### 5.5 The second demo file: web traffic
+
+`sample_data/web_demo_capture.pcap` (built by `tools/make_web_demo_capture.py`) is also
+completely synthetic. It exists to show the HTTP, TLS, retransmission and RTT features,
+which the mixed sample does not contain. The same laptop (`192.168.1.10`) does three things:
+
+| Packets | What happens |
+|---|---|
+| 1–4 | DNS lookups: `example.com` → 93.184.216.34 and `www.wikipedia.org` → 208.80.154.224 |
+| 5–7 | TCP handshake with example.com on **port 80**. The server answers after **42 ms** |
+| 8 | **HTTP request** `GET /index.html`, `Host: example.com` (87 bytes of payload) |
+| 9 | Server ACKs the request |
+| 10 | **HTTP response** `200 OK`, but this copy is "lost" (the laptop never ACKs it) |
+| 11 | The server **retransmits** the response **300 ms** later: same seq 1921578, same 99 bytes |
+| 12–15 | Laptop ACKs it. Connection closes with FIN / FIN / ACK |
+| 16–18 | TCP handshake with wikipedia.org on **port 443**. The server answers after **65 ms** |
+| 19 | **TLS Client Hello** with SNI `www.wikipedia.org`, offering TLS 1.3 |
+| 20 | **Server Hello** (chooses TLS 1.3) + Change Cipher Spec + encrypted data, in one segment |
+| 21 | Client's Change Cipher Spec + encrypted Finished |
+| 22 | Client's encrypted request (425 bytes), which is "lost" |
+| 23 | Server ACKs only up to packet 21 |
+| 24 | The laptop **retransmits** packet 22, **313 ms** later: same seq 4180257615, same 425 bytes |
+| 25–29 | Server ACKs it and sends three encrypted records (1205 + 1205 + 645 bytes). The laptop ACKs |
+| 30–32 | Connection closes |
+
+| Fact | Value |
+|---|---|
+| Total packets | 32 (6,493 bytes, 1.85 s) |
+| Application layer | DNS 4 · HTTP 3 · TLS 8 · Other / Not Detected 17 |
+| Handshakes (RTT) | 2 (42 ms to example.com, 65 ms to wikipedia.org) |
+| Retransmissions | 2 (packet 11 = copy of 10, packet 24 = copy of 22) |
+| HTTP requests | 1: `GET /index.html`, Host `example.com`, reply `200 OK` |
+| TLS server names | `www.wikipedia.org` (1 Client Hello) |
+
+Why are packets 9, 23 and the handshakes "Other / Not Detected" at the application layer?
+They are pure TCP control packets **with no payload**, so there is no HTTP or TLS header to
+read. HTTP and TLS are labeled per packet, only where their header actually is.
 
 ---
 
@@ -483,8 +611,10 @@ Start the app (`python -m streamlit run app.py`), open <http://localhost:8501>, 
 - **Navigation:** *Overview*, *Packet Explorer*, *Protocol Analysis* (the "Analyze"
   group) and *About*.
 - **Capture file:** drag-and-drop box for your own `.pcap` / `.pcapng` (max 25 MB).
-- **Use sample capture:** loads the demo file. An uploaded file always wins over the
-  sample. The choice is kept in the URL (`?demo=1`) so a page refresh keeps it on.
+- **Use sample capture:** loads a demo file. A drop-down under the switch chooses
+  **Mixed protocols (72 packets)** or **Web traffic: HTTP, TLS, retransmissions**. An
+  uploaded file always wins over the sample. The choice is kept in the URL (`?demo=1` for
+  the mixed file, `?demo=web` for the web file), so a page refresh keeps it.
 - **Active capture card:** file name, packet count, format and a green *Demo* badge
   for the sample.
 
@@ -502,6 +632,14 @@ Start the app (`python -m streamlit run app.py`), open <http://localhost:8501>, 
 
 The chips at the top right show the file name and the time span (**10.47 s**).
 
+**Traffic over time:** a step chart of how many packets (or, with the **Bytes** button,
+how many bytes) were captured in each time interval. The interval is chosen automatically
+so the chart has at most about 40 steps: **0.5 s** for the 10.47 s sample (21 intervals),
+**0.05 s** for the 1.85 s web demo. Empty intervals are kept at 0, so pauses in the traffic
+are visible. In the sample, the busy part from about 4.5 s to 8 s is the four website
+visits. In the web demo, the gaps at 0.40–0.65 s and 1.05–1.25 s are the two waits
+before the retransmissions.
+
 **Protocol distribution:** three charts, one per layer. Each packet is counted **once in
 each chart**, so every chart adds up to 72:
 
@@ -509,7 +647,7 @@ each chart**, so every chart adds up to 72:
 |---|---|---|
 | Network | IPv4 66 · IPv6 4 · ARP 2 · Other 0 | 72 |
 | Transport | TCP 42 · UDP 13 · ICMP 11 · ICMPv6 4 · Not Applicable 2 · Other 0 | 72 |
-| Application | DNS 10 · Other / Not Detected 62 | 72 |
+| Application | DNS 10 · HTTP 0 · TLS 0 · Other / Not Detected 62 | 72 |
 
 Example: DNS packet #11 is counted as **IPv4** in the network chart, **UDP** in the
 transport chart and **DNS** in the application chart. Grey bars are the "catch-all"
@@ -548,6 +686,13 @@ Rules:
 - Protocol + IP filters together = packets must match **all** of them (AND).
 - IP filters allow **partial text**, so `192.168.1.` matches the whole subnet.
 - Filtering never changes the Overview statistics. Filters work on a copy.
+- **HTTP** and **TLS** are also in the protocol list. They find 0 packets in the mixed
+  sample and 3 and 8 packets in the web demo.
+
+**Export CSV:** the button at the top right of the packet table downloads the packets
+*currently shown* (after filters) as a `.csv` file. You can open it in Excel or load it in
+Python. It contains every metadata column (32, listed in section 7.3), one row per packet,
+but no payload bytes. Example: filter **DNS** on the sample and export → 10 rows.
 
 **Packet details:** click a row (or type a packet number). The details are shown
 **layer by layer**, in the same order as the TCP/IP model:
@@ -557,8 +702,8 @@ Rules:
 | Frame | Packet number, timestamp, time since first packet, length |
 | Data Link Layer | Source and destination MAC |
 | Network Layer | IPv4/IPv6/ARP, source and destination IP (+ ARP operation) |
-| Transport Layer | TCP/UDP/ICMP, ports (+ TCP flags, seq, ack, or ICMP type/code/message) |
-| Application Layer | DNS (+ query/response, domain, record type) or Other |
+| Transport Layer | TCP/UDP/ICMP, ports (+ TCP flags, seq, ack and payload length, or ICMP type/code/message) |
+| Application Layer | DNS (+ query/response, domain, record type), HTTP (+ request line and Host, or status), TLS (+ record types, version, SNI) or Other |
 
 Four great packets to demonstrate:
 
@@ -569,6 +714,14 @@ Four great packets to demonstrate:
 | **#13** | TCP SYN: flags `SYN`, sequence 5194038, ack 0 |
 | **#72** | ICMP destination unreachable, correctly *not* counted as UDP |
 
+And three in the web demo:
+
+| Packet | Why it's interesting |
+|---|---|
+| **#8** | HTTP request: `GET /index.html`, Host `example.com`, payload 87 bytes |
+| **#19** | TLS Client Hello: version TLS 1.3, server name `www.wikipedia.org` |
+| **#20** | Three TLS records in one segment: Server Hello, Change Cipher Spec, Application Data |
+
 ### 6.4 Protocol Analysis page
 
 **Layer tables:** the same counts as the Overview, with exact percentages
@@ -578,16 +731,58 @@ Four great packets to demonstrate:
 You can read the whole story from this table: 5 connection attempts (SYN), 4 accepted
 (SYN+ACK), 1 refused (RST), 4 closed properly (8 FIN = 2 per connection).
 
-**Three-way handshakes:** NetScope finds the **4** completed handshakes:
+**Three-way handshakes:** NetScope finds the **4** completed handshakes. The RTT column
+is the time from the SYN to the SYN-ACK, which is one round trip to the server:
 
-| Client | Server | SYN | SYN-ACK | ACK |
-|---|---|---|---|---|
-| 192.168.1.10:56299 | 93.184.216.34:443 | 13 | 14 | 15 |
-| 192.168.1.10:57866 | 208.80.154.224:443 | 25 | 26 | 27 |
-| 192.168.1.10:55786 | 140.82.112.3:443 | 37 | 38 | 39 |
-| 192.168.1.10:55248 | 151.101.0.223:443 | 49 | 50 | 51 |
+| Client | Server | SYN | SYN-ACK | ACK | RTT (ms) |
+|---|---|---|---|---|---|
+| 192.168.1.10:56299 | 93.184.216.34:443 | 13 | 14 | 15 | 59.046 |
+| 192.168.1.10:57866 | 208.80.154.224:443 | 25 | 26 | 27 | 75.277 |
+| 192.168.1.10:55786 | 140.82.112.3:443 | 37 | 38 | 39 | 55.006 |
+| 192.168.1.10:55248 | 151.101.0.223:443 | 49 | 50 | 51 | 37.132 |
 
 The refused connection (59 → 60) is correctly **not** in this list.
+
+**Retransmissions:** TCP segments sent again with a sequence number already used. The mixed
+sample has **none**. The web demo has **2**:
+
+| Packet | Connection | Seq | Payload | Original | Delay |
+|---|---|---|---|---|---|
+| 11 | 93.184.216.34:80 → 192.168.1.10:50100 | 1921578 | 99 B | 10 | 300 ms |
+| 24 | 192.168.1.10:50200 → 208.80.154.224:443 | 4180257615 | 425 B | 22 | 313 ms |
+
+**Round-trip time per connection:** one row per **direction** (sender → receiver) with the
+number of segments sent, retransmissions and the min / average / max RTT (see 3.12 and 7.5).
+Web demo results:
+
+| Sender → Receiver | Segments | Retrans. | Samples | Min / Avg / Max (ms) |
+|---|---|---|---|---|
+| laptop:50100 → example.com:80 | 3 | 0 | 3 | 42 / 42 / 42 |
+| example.com:80 → laptop:50100 | 3 | 1 | 2 | 1 / 1 / 1 |
+| laptop:50200 → wikipedia.org:443 | 5 | 1 | 4 | 65 / 65 / 65 |
+| wikipedia.org:443 → laptop:50200 | 6 | 0 | 6 | 1 / 6.8 / 22 |
+
+The laptop → server rows give the real network RTT (42 ms and 65 ms, the same as the
+handshakes). The server → laptop rows only show how fast the laptop replied. Each
+retransmitted segment gives **no** sample (Karn's algorithm), which is why there are fewer
+samples than segments.
+
+In the mixed sample, the RTT values in both directions range from a few to about 80
+milliseconds, because the generator puts a random gap of 2–80 ms before every packet.
+They are not real network measurements.
+
+**Web traffic:** two tables that are empty for the mixed sample:
+- **HTTP requests:** packet, client, Host, request line and the server's reply, matched on
+  the same connection. Web demo: `8 · 192.168.1.10 · example.com · GET /index.html · 200 OK`.
+- **TLS server names:** SNI names from Client Hello messages. Web demo: `www.wikipedia.org`.
+
+**Conversations:** like Wireshark's *Statistics → Conversations*, one row per **pair of IP
+addresses**. Both directions are combined, and ARP is left out because it has no IP header.
+Address A is the one that sent first. Columns: total packets and bytes, packets/bytes
+A→B and B→A, start time, duration and the protocols seen. The mixed sample has **10**
+conversations. The biggest is `192.168.1.10 ↔ 8.8.8.8` with 16 packets (8 each way: 4 pings
+and 4 DNS lookups), followed by the four websites with 10 packets each (6 sent by the
+laptop, 4 by the server).
 
 **ICMP / ICMPv6 messages:** echo-request 5, echo-reply 5 (ICMP); Echo Request 2,
 Echo Reply 2 (ICMPv6); dest-unreach 1.
@@ -613,13 +808,16 @@ netscope/
 ├── app.py                        # The web app: pages, sidebar, what to show
 ├── netscope/
 │   ├── packet_parser.py          # Reads the file, extracts one record per packet
-│   ├── protocol_analyzer.py      # Decides IPv4/TCP/DNS... for each packet
-│   ├── traffic_statistics.py     # Counts, top IPs, handshakes, ICMP, DNS
-│   ├── filters.py                # Protocol and IP filters
+│   ├── protocol_analyzer.py      # Decides IPv4/TCP/DNS/HTTP/TLS... for each packet
+│   ├── traffic_statistics.py     # Counts, top IPs, handshakes, retransmissions, RTT,
+│   │                             # conversations, traffic over time, ICMP, DNS, HTTP, TLS
+│   ├── filters.py                # Protocol and IP filters, CSV export
 │   └── ui.py                     # Look and feel: colours, cards, charts
 ├── tests/                        # Automated tests (pytest)
-├── sample_data/sample_capture.pcap
-├── tools/make_sample_capture.py  # Builds the sample file
+├── sample_data/sample_capture.pcap     # Mixed-protocol demo (72 packets)
+├── sample_data/web_demo_capture.pcap   # Web demo: HTTP, TLS, retransmissions (32 packets)
+├── tools/make_sample_capture.py        # Builds the mixed demo file
+├── tools/make_web_demo_capture.py      # Builds the web demo file
 ├── assets/                       # Logo
 └── .streamlit/config.toml        # Theme and upload limit
 ```
@@ -639,11 +837,12 @@ netscope/
  packet_parser.extract_metadata()  one packet -> one dictionary (record)
      |      uses protocol_analyzer to classify each layer
      v
- pandas DataFrame                  72 rows x 26 columns = the "packet table"
+ pandas DataFrame                  72 rows x 32 columns = the "packet table"
      |
-     +--> traffic_statistics  -> tiles, top talkers, flags, handshakes, ICMP, DNS
+     +--> traffic_statistics  -> tiles, traffic over time, top talkers, flags, handshakes,
+     |                           retransmissions, RTT, conversations, ICMP, DNS, HTTP, TLS
      +--> protocol_analyzer   -> per-layer distributions
-     +--> filters             -> Packet Explorer table
+     +--> filters             -> Packet Explorer table and CSV export
      |
      v
  app.py + ui.py                    draw everything in Streamlit
@@ -667,8 +866,12 @@ these columns (the "packet metadata model"):
 | Identity | `packet_no`, `timestamp`, `time`, `relative_time`, `length` |
 | Link layer | `src_mac`, `dst_mac` |
 | Network layer | `src_ip`, `dst_ip`, `network_protocol`, `arp_operation` |
-| Transport layer | `transport_protocol`, `src_port`, `dst_port`, `tcp_flags`, `tcp_seq`, `tcp_ack`, `icmp_type`, `icmp_code`, `icmp_info` |
-| Application layer | `application_protocol`, `dns_query`, `dns_query_type`, `dns_direction` |
+| Transport layer | `transport_protocol`, `src_port`, `dst_port`, `tcp_flags`, `tcp_seq`, `tcp_ack`, `tcp_payload_len`, `icmp_type`, `icmp_code`, `icmp_info` |
+| Application layer | `application_protocol`, `dns_query`, `dns_query_type`, `dns_direction`, `http_info`, `http_host`, `tls_message`, `tls_version`, `tls_sni` |
+
+`tcp_payload_len` is the number of data bytes in the TCP segment, with Ethernet padding
+removed. The retransmission and RTT analysis need it. `http_info` holds either the request
+line without the version (`GET /index.html`) or the status (`200 OK`).
 | Summary | `protocol` (most specific name), `parse_error` |
 
 For example, packet #13 becomes:
@@ -702,13 +905,33 @@ Each packet gets **three independent labels**, one per layer:
 ```
 Network:      IPv4 | IPv6 | ARP | Other / Not Detected
 Transport:    TCP | UDP | ICMP | ICMPv6 | Not Applicable (ARP) | Other / Not Detected
-Application:  DNS | Other / Not Detected
+Application:  DNS | HTTP | TLS | Other / Not Detected
 ```
 
 **Rule 1: trust the decoded headers, not port numbers.** A packet is labeled DNS only if
 Scapy really decoded a DNS header from it, *and* it passes a sanity check: the DNS
 "opcode" must be a valid value and the number of questions must match the header's
 question count. Random bytes sent to port 53 are therefore **not** counted as DNS.
+
+The same rule applies to HTTP and TLS, which NetScope parses itself from the TCP payload
+(`tcp_payload()` returns the payload bytes without Ethernet padding):
+
+- `parse_tls()`: the first byte must be a content type 20–23, the next two a version 3.0–3.4,
+  and the length at most 18,432 bytes (the TLS maximum). It then walks through every record
+  in the segment, collecting names like "Client Hello". For a Client or Server Hello,
+  `_parse_hello()` steps over the fixed fields (version, 32-byte random, session ID, cipher
+  suites, compression) to reach the **extensions**. From those it reads the SNI (extension 0)
+  and the real version (extension 43, supported_versions). GREASE values (dummy versions
+  like `0x3a3a` that browsers add on purpose) are ignored. Every length is checked, so a
+  cut-off Hello never crashes.
+- `parse_http()`: a regular expression checks the first line: a known method + path +
+  `HTTP/1.0|1.1`, or `HTTP/1.x` + a status code 100–599. For a request, it reads headers
+  only up to the blank line, looking for `Host:`.
+
+TLS is checked before HTTP, and DNS before both. Example from the web demo, packet #19:
+payload starts `16 03 01 …` → content type 22 (Handshake), version 3.1, then handshake
+type 1 = **Client Hello** → SNI `www.wikipedia.org`, supported_versions lists TLS 1.3 →
+label **TLS**.
 
 **Rule 2: use the outermost layer.** The code walks the layers from the outside in
 (`Ether → IP → ICMP → …`) and takes the **first** network layer and the **first** transport
@@ -737,9 +960,15 @@ every file.
 | `capture_duration` | last timestamp − first timestamp | 10.47 s |
 | `top_ips` | 5 most frequent IPs | 192.168.1.10 first |
 | `tcp_flag_counts` | TCP packets grouped by flags | ACK 16, … |
-| `find_tcp_handshakes` | completed handshakes | 4 |
+| `find_tcp_handshakes` | completed handshakes + handshake RTT | 4 |
+| `tcp_retransmissions` | segments sent again with a used sequence number | 0 (web demo: 2) |
+| `tcp_rtt` | RTT per direction (min / avg / max), retransmission count | 9 directions |
+| `conversations` | packets and bytes per IP address pair, both directions | 10 pairs |
+| `choose_interval` + `traffic_over_time` | packets and bytes per time interval | 21 intervals of 0.5 s |
 | `icmp_type_counts` | ICMP/ICMPv6 grouped by message | echo-request 5, … |
 | `top_dns_queries` | most queried domains (queries only) | example.com 2, … |
+| `http_requests` | HTTP requests with Host and matching reply | none (web demo: 1) |
+| `tls_server_names` | SNI names from Client Hellos | none (web demo: www.wikipedia.org) |
 
 **The handshake detector (algorithm):** it goes through the TCP packets in order and
 remembers them in two "waiting lists":
@@ -760,7 +989,51 @@ Sequence numbers are compared **modulo 2³²**, because TCP sequence numbers wra
 to 0 after 4,294,967,295.
 
 Applied to the refused connection: SYN #59 is remembered, but #60 is RST (not SYN-ACK),
-so it never completes. That's why the answer is 4, not 5.
+so it never completes. That's why the answer is 4, not 5. The handshake RTT is simply
+`time(SYN-ACK) − time(SYN)`.
+
+**Sequence space.** Both algorithms below need to know how much sequence space a segment
+uses: `payload bytes + 1 if SYN + 1 if FIN`. A pure ACK uses 0, so it is never counted as a
+retransmission and needs no acknowledgement.
+
+**The retransmission detector:**
+
+```
+for each TCP packet that uses sequence space:
+    key = (src ip, src port, dst ip, dst port, sequence number)
+    if key was seen before:  -> RETRANSMISSION of that earlier packet (delay = time difference)
+    else:                    remember key
+```
+
+Web demo: packet 22 has key (192.168.1.10, 50200, 208.80.154.224, 443, 4180257615). Packet
+24 has the same key, so it is a retransmission of 22, sent 313 ms later.
+
+**The RTT estimator:**
+
+```
+first pass:  count how many times each (direction, seq) was sent
+second pass, for each TCP packet in order:
+    1. if it has the ACK flag: every waiting segment from the OTHER direction whose
+       end (seq + length) <= this ack number is now acknowledged
+       -> RTT sample = this packet's time - that segment's time; stop waiting for it
+    2. if it uses sequence space and was sent only ONCE (Karn's algorithm):
+       start waiting for its ACK
+report min / average / max of the samples, per direction
+```
+
+"≤" is calculated **modulo 2³²**, so it still works when sequence numbers wrap around to 0.
+Web demo: packet 8 (seq 2395527357, 87 bytes) ends at 2395527444. Packet 9 carries
+ack = 2395527444, so the sample is 0.372 − 0.330 = **42 ms**. Packets 10/11 have the same
+sequence number, so neither gives a sample.
+
+**Conversations:** packets are grouped by the *set* {source IP, destination IP}, so A→B and
+B→A land in the same row. Only IPv4/IPv6 packets are included. The rows are sorted by
+packet count.
+
+**Traffic over time:** each packet's `relative_time` is divided by the interval and rounded
+down to give its "bucket" number. The buckets are counted, and missing buckets are filled
+with 0. `choose_interval()` picks the smallest "round" interval (0.001, 0.002, 0.005, …,
+0.5, 1, 2, 5, 10, 15, 30, 60 s, …) that gives at most 40 buckets.
 
 ### 7.6 `filters.py`: filtering
 
@@ -770,24 +1043,28 @@ so it never completes. That's why the answer is 4, not 5.
 - `filter_by_ip()`: keeps rows whose IP **contains** the typed text (partial match).
 - `apply_filters()`: applies all three one after another (AND).
 - Always returns a **new** table, never changes the original.
+- `"HTTP"` and `"TLS"` map to `application_protocol == "HTTP"` / `"TLS"`.
+- `to_csv()`: turns a (filtered) table into CSV bytes for the **Export CSV** button. It holds
+  only the metadata columns, so payloads can never end up in the file.
 
 ### 7.7 `app.py` and `ui.py`: the interface
 
 - `app.py` decides **what** to show. It creates the four pages with `st.navigation`,
   handles the upload and the sample toggle, and calls the analysis functions.
 - `ui.py` decides **how** it looks. It holds the colour tokens, the stylesheet, and small
-  building blocks: page header, KPI tiles, cards, key/value lists, the empty-state screen
-  and the bar chart style.
+  building blocks: page header, KPI tiles, cards, key/value lists, the empty-state screen,
+  the bar chart style and the traffic-over-time step chart (`time_chart`).
 - **One colour per layer** everywhere: Network = blue, Transport = violet,
   Application = teal. Grey = "Other / Not Applicable".
 - **Caching:** `analyze_capture()` is wrapped in `@st.cache_data`, so a file is parsed only
   once. Switching pages is instant.
 - **Privacy:** the uploaded file is written to a temporary file only while Scapy reads it,
-  then deleted immediately. Payload bytes are never stored or displayed.
+  then deleted immediately. Payload bytes are never stored or displayed. For HTTP and TLS
+  only the header fields listed in 7.3 are kept.
 
 ### 7.8 Tests
 
-`tests/` contains **39 automated tests**. They build small fake packets with Scapy (in
+`tests/` contains **62 automated tests**. They build small fake packets with Scapy (in
 `conftest.py`) and check, for example, that:
 - each protocol is classified correctly (TCP, UDP, ICMP, ARP, DNS, IPv6…);
 - random bytes on port 53 are **not** DNS, and port 443 is **not** assumed to be TLS;
@@ -796,6 +1073,19 @@ so it never completes. That's why the answer is 4, not 5.
 - the three-way handshake detector finds real handshakes;
 - empty, invalid, corrupted and truncated files give the right errors/warnings;
 - PCAP and PCAPNG both work.
+
+`test_future_scope.py` (23 tests) covers the newer features:
+- HTTP requests and responses are detected, even on an unusual port, and the body is not
+  stored. Text that only *looks* like HTTP (`GETTING…`, `HTTP/2.0`, status 999) is not;
+- TLS 1.3 and TLS 1.2 Client Hellos (with/without SNI), a multi-record Server Hello, and
+  Application Data labeled "(record layer)". 200 random payloads on port 443 are **not** TLS,
+  and a Client Hello cut off at any byte does not crash;
+- Ethernet padding is not counted as TCP payload;
+- the HTTP/TLS filters and the CSV export (same columns, filtered rows, no payload);
+- conversations combine both directions and skip ARP; traffic over time keeps empty intervals;
+- retransmission and RTT with a sequence number that **wraps around 2³²**, Karn's rule, and
+  a duplicate ACK that must not count as a retransmission;
+- the whole web demo file end to end.
 
 (The ICMP-error case from packet #72 is shown by the sample file but does not have its own
 test yet. It would be a good one to add.)
@@ -818,6 +1108,8 @@ A good way to show you understand headers: explain each packet length in the sam
 | DNS query example.com (#11) | **71** | Ethernet 14 + IPv4 20 + UDP 8 + DNS 29 (12 header + 17 question) |
 | Plain UDP (#65) | **202** | Ethernet 14 + IPv4 20 + UDP 8 + 160 bytes data |
 | ICMP unreachable (#72) | **70** | Ethernet 14 + IPv4 20 + ICMP 8 + quoted IPv4 20 + quoted UDP 8 |
+| Web demo: HTTP GET (#8) | **141** | 54 headers + **87** bytes HTTP request (request line + 3 headers + blank line) |
+| Web demo: TLS Client Hello (#19) | **179** | 54 headers + 125 TLS = record header 5 + handshake header 4 + Hello body 116 |
 
 Observations:
 - A TCP packet with **no data** is still 54 bytes. That's the cost of headers.
@@ -838,8 +1130,9 @@ python -m streamlit run app.py
 # run the tests
 python -m pytest -v
 
-# rebuild the sample capture (same file every time)
+# rebuild the demo captures (same files every time)
 python tools/make_sample_capture.py
+python tools/make_web_demo_capture.py
 ```
 
 **Demo script for a presentation (about 3 minutes):**
@@ -849,29 +1142,45 @@ python tools/make_sample_capture.py
 4. Clear the filter, open **#13, #14, #15** → explain the three-way handshake with the
    seq/ack numbers.
 5. Open **#1** (ARP broadcast) and **#72** (ICMP unreachable).
-6. Protocol Analysis → show the **4 handshakes**, the **RST** in the flags table and the
-   DNS domains.
-7. Optional: upload your own Wireshark capture to show it works on real traffic.
+6. Protocol Analysis → show the **4 handshakes** (with RTT), the **RST** in the flags table,
+   the conversations and the DNS domains.
+7. Switch the demo drop-down to **Web traffic** → Packet Explorer: open **#8** (HTTP GET) and
+   **#19** (TLS Client Hello with SNI). Protocol Analysis: show the **2 retransmissions** and
+   the RTT table (42 ms / 65 ms).
+8. Optional: export the filtered packets with **Export CSV**, or upload your own Wireshark
+   capture to show it works on real traffic.
 
 ---
 
 ## 10. Limitations and future improvements
 
 **Current limitations**
-- Only **DNS** is detected at the application layer. HTTP, TLS, DHCP etc. appear as
-  "Other / Not Detected" (by design: no guessing from ports).
+- The application layer detects **DNS, HTTP/1.x and TLS**. Others (DHCP, QUIC, SMTP,
+  HTTP/2 without TLS…) appear as "Other / Not Detected" (by design: no guessing from ports).
+- HTTP and TLS are recognised **per packet**, without joining TCP segments back together
+  (stream reassembly). A long HTTP body or a TLS record continued in the next segment is
+  "Other / Not Detected" in those later segments.
+- Encrypted contents cannot be read; only TLS handshake metadata is visible. With
+  Encrypted Client Hello (ECH) the real SNI is hidden too.
 - Offline only. It does not capture live traffic.
 - Files are limited to 25 MB (changeable in `.streamlit/config.toml`).
 - Only Ethernet-style captures are fully decoded; unusual link types may show as "Other".
-- TCP analysis stops at the handshake/flags. It doesn't track retransmissions or
-  measure speed.
+- The retransmission detector does not tell apart the subtypes Wireshark shows (fast
+  retransmission, spurious retransmission, out-of-order). RTT values depend on where the
+  capture was taken (see 3.12).
+
+**Already added (they were on the original future-scope list)**
+- HTTP and TLS detection by header parsing, including the TLS SNI.
+- Conversation table (packets and bytes per IP pair).
+- Traffic-over-time chart.
+- TCP retransmission and RTT analysis.
+- CSV export of the filtered packets.
 
 **Ideas for future versions**
-- Decode more application protocols (HTTP, TLS handshake, DHCP).
-- Conversation view (group packets into flows).
-- Timeline chart (packets per second).
+- Optional live capture (needs Npcap and administrator rights on Windows).
+- TCP stream reassembly, so HTTP/TLS split over several segments is recognised.
+- Decode more application protocols (DHCP, QUIC, SMTP) and TLS 1.2 certificate names.
 - Detect suspicious patterns (port scans = many SYNs with RST replies).
-- Export filtered packets to CSV.
 
 ---
 
@@ -887,9 +1196,34 @@ Streamlit dashboard.
 **Why is ARP's transport layer "Not Applicable"?**
 ARP works directly over Ethernet. It has no IP header and no TCP/UDP header at all.
 
-**Why are the HTTPS packets "Other / Not Detected"?**
-Their payload is TLS-encrypted and not decoded. NetScope only labels protocols it actually
-decodes; it never guesses from the port number.
+**Why are the port-443 packets in the mixed sample "Other / Not Detected"?**
+Their synthetic payload is random bytes, not a real TLS record, so the TLS header check
+fails. NetScope only labels protocols whose header it actually decodes; it never guesses
+from the port number. In the web demo, real TLS records on port 443 *are* labeled TLS.
+
+**How do you detect HTTP and TLS?**
+From the first bytes of the TCP payload. HTTP: a valid request line (`GET /index.html
+HTTP/1.1`) or status line (`HTTP/1.1 200 OK`). TLS: a valid record header (content type
+20–23, version 3.x, sensible length). Web demo: packets 8 (HTTP) and 19 (TLS).
+
+**What is SNI and why can you see it in encrypted traffic?**
+Server Name Indication: the website name the client puts in the TLS Client Hello, so the
+server can choose the right certificate. It is sent before encryption starts, so it is
+readable. Web demo packet 19: `www.wikipedia.org`.
+
+**How do you detect a retransmission?**
+The same sender sends a segment with a sequence number it has already used for data (or
+SYN/FIN) on the same connection. Web demo: packet 24 repeats packet 22 (seq 4180257615,
+425 bytes), 313 ms later.
+
+**How do you measure RTT, and what is Karn's algorithm?**
+RTT = time from a segment to the first ACK that covers it (ack ≥ seq + length). If a
+segment was sent twice, we cannot know which copy the ACK answers, so it is not measured.
+That rule is Karn's algorithm. Web demo: 42 ms to example.com, 65 ms to wikipedia.org.
+
+**What is a conversation?**
+All packets between one pair of IP addresses, in both directions, with packet and byte
+counts per direction. Like Wireshark's *Statistics → Conversations*.
 
 **How do you detect a three-way handshake?**
 Match SYN → SYN-ACK (ack = seq+1) → ACK (ack = seq+1) using IP addresses, ports and
@@ -913,9 +1247,11 @@ TCP is connection-based, reliable and ordered (handshake, sequence numbers, ACKs
 connectionless, fast, with no guarantees. Sample: website traffic is TCP, DNS and the
 "video call" stream are UDP.
 
-**What is the sample file?**
-72 synthetic packets built with Scapy (`tools/make_sample_capture.py`). No real traffic,
-safe to share, and it covers every protocol NetScope understands.
+**What are the sample files?**
+Two synthetic captures built with Scapy, with no real traffic, so they are safe to share.
+The mixed file (72 packets, `tools/make_sample_capture.py`) covers ARP, IPv4, IPv6, TCP,
+UDP, ICMP, ICMPv6 and DNS. The web file (32 packets, `tools/make_web_demo_capture.py`)
+covers HTTP, TLS with SNI, retransmissions and RTT.
 
 **Is it safe/private?**
 Yes. Everything is processed locally, the upload is deleted right after parsing, and
@@ -931,16 +1267,22 @@ payloads are never shown.
 | **ARP** | Finds the MAC address for an IP address on the local network |
 | **Broadcast** | A message to every device on the local network (`ff:ff:ff:ff:ff:ff`) |
 | **Capture file** | A file containing recorded packets (.pcap / .pcapng) |
+| **Client Hello** | First TLS handshake message, sent by the client. It lists versions, ciphers and the SNI |
+| **Conversation** | All packets between one pair of IP addresses, in both directions |
+| **CSV** | Comma-separated values: a plain-text table that Excel can open (used by Export CSV) |
 | **DataFrame** | A table in pandas, which NetScope uses with one row per packet |
 | **DNS** | Translates domain names into IP addresses |
 | **Encapsulation** | Wrapping data in headers layer by layer |
 | **Ephemeral port** | A temporary random port used by a client (49152–65535) |
 | **Ethernet** | Link-layer protocol carrying packets on the local network |
 | **FIN** | TCP flag: "I'm finished sending" |
+| **GREASE** | Dummy values that browsers put in TLS lists on purpose, so servers learn to ignore unknown values |
 | **Handshake** | SYN → SYN-ACK → ACK, the start of every TCP connection |
 | **Header** | Control information at the start of a packet layer |
+| **HTTP** | Web protocol: text requests (`GET /page`) and responses (`200 OK`) over TCP |
 | **ICMP / ICMPv6** | Control/error messages for IPv4 / IPv6 (e.g. ping) |
 | **IP address** | Address of a computer on a network (IPv4 or IPv6) |
+| **Karn's algorithm** | Do not measure RTT for a segment that was sent more than once |
 | **Link-local** | IPv6 address valid only on the local link (`fe80::`) |
 | **MAC address** | Hardware address of a network card |
 | **Magic number** | First bytes of a file that identify its format |
@@ -950,13 +1292,17 @@ payloads are never shown.
 | **Payload** | The actual data inside a packet (never shown by NetScope) |
 | **Port** | Number identifying a program/service on a computer |
 | **PSH** | TCP flag: deliver this data to the application now |
+| **Retransmission** | A TCP segment sent again (same sequence number) because it was not acknowledged in time |
 | **RST** | TCP flag: abort / refuse the connection |
+| **RTT** | Round-trip time: from sending a segment until its acknowledgement arrives |
 | **Scapy** | Python library for decoding and building packets |
 | **Sequence number** | TCP's number for each byte sent, used for ordering |
+| **SNI** | Server Name Indication: the website name in the TLS Client Hello, readable before encryption |
 | **Streamlit** | Python library that turns scripts into web apps |
 | **SYN** | TCP flag: "let's start a connection" |
 | **TCP** | Reliable, connection-based transport protocol |
-| **TLS** | Encryption used by HTTPS |
+| **TLS** | Encryption used by HTTPS. Its records start with a 5-byte header (type, version, length) |
+| **TLS record** | One unit of TLS data: 5-byte header + handshake message, alert or encrypted data |
 | **TTL** | IP field limiting how many routers a packet can pass |
 | **UDP** | Fast, connectionless transport protocol |
 | **Wireshark** | The most popular program for capturing and inspecting packets |

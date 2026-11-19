@@ -16,6 +16,8 @@ PROTOCOL_FILTERS = {
     "ICMP": ("transport_protocol", "ICMP"),
     "ICMPv6": ("transport_protocol", "ICMPv6"),
     "DNS": ("application_protocol", "DNS"),
+    "HTTP": ("application_protocol", "HTTP"),
+    "TLS": ("application_protocol", "TLS"),
     "ARP": ("network_protocol", "ARP"),
     "IPv4": ("network_protocol", "IPv4"),
     "IPv6": ("network_protocol", "IPv6"),
@@ -64,3 +66,12 @@ def apply_filters(
     result = filter_by_ip(result, "src_ip", src_ip)
     result = filter_by_ip(result, "dst_ip", dst_ip)
     return result
+
+
+def to_csv(df: pd.DataFrame) -> bytes:
+    """Export packet metadata (every column, one row per packet) as UTF-8 CSV.
+
+    Only the metadata columns are written; no packet payload is included.
+    The 'timestamp' column is the raw capture time in seconds since 1970.
+    """
+    return df.to_csv(index=False).encode("utf-8")

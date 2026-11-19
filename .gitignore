@@ -9,8 +9,9 @@ venv/
 *.pcap
 *.pcapng
 *.cap
-# ...except the synthetic demo file (built by tools/make_sample_capture.py)
+# ...except the synthetic demo files (built by the scripts in tools/)
 !sample_data/sample_capture.pcap
+!sample_data/web_demo_capture.pcap
 
 # Editors / OS
 .vscode/

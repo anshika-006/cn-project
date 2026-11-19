@@ -25,11 +25,13 @@ the results accurately.
 ## 3. Objectives
 
 - Read PCAP and PCAPNG files produced by Wireshark.
-- Extract packet metadata: timestamps, MAC addresses, IP addresses, ports, lengths, TCP flags, DNS queries.
+- Extract packet metadata: timestamps, MAC addresses, IP addresses, ports, lengths, TCP flags, DNS queries,
+  HTTP request/status lines and TLS handshake details (version, SNI).
 - Classify each packet separately at the **network**, **transport** and **application** layer.
-- Show overall traffic statistics and protocol distributions.
-- Provide a packet explorer with protocol and IP address filters.
-- Detect TCP three-way handshakes.
+- Show overall traffic statistics, protocol distributions and traffic over time.
+- Provide a packet explorer with protocol and IP address filters and CSV export.
+- Detect TCP three-way handshakes and retransmissions, and estimate round-trip time.
+- Summarise conversations between pairs of IP addresses.
 - Handle empty, corrupted and truncated files without crashing.
 
 ## 4. Technologies Used
@@ -50,10 +52,10 @@ flowchart LR
     A[Network interface] -->|Wireshark captures| B[(.pcap / .pcapng file)]
     B -->|Upload| C[app.py<br/>Streamlit UI]
     C --> D[packet_parser.py<br/>Scapy reads packets,<br/>extracts metadata]
-    D --> E[protocol_analyzer.py<br/>Network / Transport /<br/>Application classification]
+    D --> E[protocol_analyzer.py<br/>Network / Transport /<br/>Application classification<br/>DNS, HTTP, TLS parsing]
     D --> F[(Pandas DataFrame<br/>one row per packet)]
-    F --> G[traffic_statistics.py<br/>counts, bytes, top IPs,<br/>handshakes]
-    F --> H[filters.py<br/>protocol & IP filters]
+    F --> G[traffic_statistics.py<br/>counts, bytes, top IPs, traffic over time,<br/>handshakes, retransmissions, RTT,<br/>conversations]
+    F --> H[filters.py<br/>protocol & IP filters,<br/>CSV export]
     G --> C
     H --> C
 ```
@@ -72,21 +74,25 @@ netscope/
 ├── netscope/
 │   ├── __init__.py
 │   ├── packet_parser.py       # Reads PCAP/PCAPNG, extracts per-packet metadata
-│   ├── protocol_analyzer.py   # Layer-by-layer protocol classification + distributions
-│   ├── traffic_statistics.py  # Totals, unique IPs, top IPs, TCP/ICMP/DNS summaries
-│   ├── filters.py             # Protocol and IP address filters
+│   ├── protocol_analyzer.py   # Layer-by-layer classification (incl. HTTP/TLS parsing) + distributions
+│   ├── traffic_statistics.py  # Totals, top IPs, traffic over time, handshakes, retransmissions,
+│   │                          # RTT, conversations, ICMP/DNS/HTTP/TLS summaries
+│   ├── filters.py             # Protocol and IP address filters, CSV export
 │   └── ui.py                  # Design system: colours, styles, cards, KPI tiles, charts
 ├── tests/
 │   ├── conftest.py            # Synthetic test packets (used only in tests)
 │   ├── test_packet_parser.py
-│   └── test_protocol_analyzer.py
+│   ├── test_protocol_analyzer.py
+│   └── test_future_scope.py   # HTTP/TLS, conversations, time chart, retransmission/RTT, CSV
 ├── assets/                    # NetScope logo (logo.svg, mark.svg)
-├── sample_data/               # Synthetic demo capture (sample_capture.pcap)
-├── tools/make_sample_capture.py  # Rebuilds the demo capture with Scapy
+├── sample_data/               # Synthetic demo captures (sample_capture.pcap, web_demo_capture.pcap)
+├── tools/make_sample_capture.py     # Rebuilds the mixed-protocol demo capture with Scapy
+├── tools/make_web_demo_capture.py   # Rebuilds the HTTP/TLS/retransmission demo capture
 ├── .streamlit/config.toml     # Brand theme (fonts, colours) and 25 MB upload limit
 ├── screenshots/               # App screenshots used in this README
 ├── requirements.txt
 ├── README.md
+├── explain.md                 # Full guide: theory, demo files, every screen, how the code works
 ├── VIVA_PREPARATION.md
 └── .gitignore
 ```
@@ -97,32 +103,48 @@ netscope/
    PCAPNG file. Empty files and other file types are rejected with a clear message.
 2. **Parsing** – Scapy's `PcapReader` reads packets one by one. For every packet NetScope records:
    packet number, timestamp, MAC addresses, IP addresses, ports, length, TCP flags and sequence
-   numbers, ICMP type, ARP operation and DNS query name.
+   numbers, TCP payload length, ICMP type, ARP operation, DNS query name, the HTTP request or
+   status line and Host header, and the TLS record type, version and SNI server name.
 3. **Classification** – each packet gets three independent labels:
 
    | Layer | Possible values |
    |---|---|
    | Network | IPv4, IPv6, ARP, Other / Not Detected |
    | Transport | TCP, UDP, ICMP, ICMPv6, Not Applicable (ARP), Other / Not Detected |
-   | Application | DNS, Other / Not Detected |
+   | Application | DNS, HTTP, TLS, Other / Not Detected |
 
    - DNS is detected only when Scapy actually decodes a valid DNS header — not just because port 53 is used.
-   - Port 443 is **not** assumed to be TLS and port 80 is **not** assumed to be HTTP.
+   - HTTP is detected only from a valid HTTP/1.x request line (`GET /path HTTP/1.1`) or status
+     line (`HTTP/1.1 200 OK`) at the start of the TCP payload; TLS only from a valid TLS record
+     header (content type 20–23, version 3.0–3.4). For a TLS Client Hello the server name (SNI)
+     and offered version are read from its extensions. Port 443 is **not** assumed to be TLS and
+     port 80 is **not** assumed to be HTTP; HTTP on port 8080 is still found by its content.
    - ARP has no IP header and no transport layer; its sender/target IP fields are shown as source/destination IP.
 4. **Integrity check** – if the file was cut off in the middle of a packet, a warning is shown.
 5. **Statistics and display** – everything shown is calculated from the uploaded packets.
    Filters create a new filtered table and never change the overall statistics.
 
 **Privacy:** processing is completely local, the capture file is not kept, and application
-payloads (the data inside packets) are never displayed or stored.
+payloads (the data inside packets) are never displayed or stored. Only protocol headers are
+kept: the HTTP start line and Host header, never the HTTP body; for TLS only the record types,
+version and SNI name, never the encrypted data.
+
+**TCP analysis:**
+- *Retransmission*: a segment that repeats a sequence number already sent with data (or SYN/FIN)
+  in the same direction of the same connection. Pure ACKs and duplicate ACKs are not counted.
+- *Round-trip time (RTT)*: for each segment, the time until the first ACK from the other side
+  that covers it (ack ≥ seq + length, allowing for 32-bit wrap-around). Segments sent more than
+  once are skipped (Karn's algorithm). RTT is reported per direction: in a capture taken on the
+  client, *client → server* rows are the real network round trip, while *server → client* rows
+  only show how fast the client replied. The handshake table also shows SYN → SYN-ACK time.
 
 ### Pages
 
 | Page | Contents |
 |---|---|
-| Overview | Total packets, total captured bytes, unique source/destination IPs, DNS packet count, layer distribution charts, top 5 source and destination IPs |
-| Packet Explorer | Packet table, filters (TCP, UDP, ICMP, ICMPv6, DNS, ARP, IPv4, IPv6, source IP, destination IP), packet details panel |
-| Protocol Analysis | Per-layer tables with counts and percentages, TCP flag combinations, completed three-way handshakes, ICMP message types, top DNS domains |
+| Overview | Total packets, total captured bytes, unique source/destination IPs, DNS packet count, traffic-over-time chart (packets or bytes per interval), layer distribution charts, top 5 source and destination IPs |
+| Packet Explorer | Packet table, filters (TCP, UDP, ICMP, ICMPv6, DNS, HTTP, TLS, ARP, IPv4, IPv6, source IP, destination IP), **Export CSV** of the filtered packets' metadata, packet details panel (incl. HTTP and TLS fields) |
+| Protocol Analysis | Per-layer tables with counts and percentages, TCP flag combinations, completed three-way handshakes with handshake RTT, retransmissions, RTT per direction, HTTP requests with replies, TLS server names (SNI), IP conversations (packets and bytes per address pair, both directions), ICMP message types, top DNS domains |
 | About | Project summary: workflow, concepts, technologies, privacy |
 
 ## 8. Installation (Windows PowerShell)
@@ -211,10 +233,19 @@ Switch on **Use sample capture** in the sidebar (just below the upload box) to l
 with no real traffic: ARP, ping (ICMP), DNS lookups, four TCP connections with full
 three-way handshakes, a refused connection (RST), non-DNS UDP, IPv6 ICMPv6 pings and an
 ICMP "destination unreachable". An uploaded file always takes priority over the sample.
-To rebuild it:
+
+A second demo file can be chosen in the drop-down under the switch:
+**Web traffic: HTTP, TLS, retransmissions** (`sample_data/web_demo_capture.pcap`, 32 synthetic
+packets). It has DNS lookups, an HTTP `GET /index.html` with a `200 OK` reply that is
+retransmitted once, and a TLS 1.3 connection to `www.wikipedia.org` (Client Hello with SNI,
+Server Hello, encrypted records filled with random bytes) in which one client segment is
+retransmitted. The URL `?demo=1` opens the first demo, `?demo=web` the second.
+
+To rebuild the demo files:
 
 ```powershell
 python tools/make_sample_capture.py
+python tools/make_web_demo_capture.py
 ```
 
 ### Running the tests
@@ -234,7 +265,9 @@ maxUploadSize = 25
 
 ## 11. Screenshots
 
-Taken with the built-in demo file (**Use sample capture** switched on).
+Taken with the built-in demo file (**Use sample capture** switched on). These images were taken
+before the traffic-over-time chart, CSV export, retransmission/RTT, web traffic and conversation
+sections were added, so the current pages show more than the pictures.
 
 **Overview:** summary tiles, protocol distribution per layer, top talkers
 
@@ -255,9 +288,16 @@ Taken with the built-in demo file (**Use sample capture** switched on).
 ## 12. Limitations
 
 - Offline analysis only; there is no live capture.
-- Application layer detection is limited to DNS. HTTP, TLS and others are shown as
-  *Other / Not Detected* instead of being guessed from port numbers.
-- Encrypted traffic (HTTPS, DNS over HTTPS) cannot be inspected.
+- Application layer detection covers DNS, HTTP/1.x and TLS. Other protocols (e.g. QUIC,
+  HTTP/2 without TLS, SMTP) are shown as *Other / Not Detected* instead of being guessed from
+  port numbers.
+- HTTP and TLS are detected per packet, without TCP stream reassembly: only a segment that
+  starts with an HTTP start line or TLS record header is labelled, so later segments of a long
+  HTTP body, or a TLS record that continues into the next segment, are *Other / Not Detected*.
+- Encrypted traffic (HTTPS, DNS over HTTPS) cannot be inspected; only the TLS handshake
+  metadata (record types, version, SNI) is visible. Encrypted Client Hello hides the real SNI.
+- Retransmission and RTT analysis depend on where the capture was taken and do not detect
+  fast retransmission, spurious retransmission or out-of-order segments separately.
 - IP fragments are not reassembled; later fragments have no transport header and are counted as
   *Other / Not Detected* at the transport layer.
 - Tunnelled traffic (VPN, GRE, IP-in-IP) is classified by the outermost header.
@@ -267,16 +307,19 @@ Taken with the built-in demo file (**Use sample capture** switched on).
 
 ## 13. Future Scope
 
-- HTTP and TLS detection by real header parsing (e.g. TLS Client Hello / SNI).
-- Conversation / flow table (packets and bytes per IP pair).
-- Traffic-over-time chart.
-- TCP retransmission and RTT analysis.
-- Export of filtered packet metadata to CSV.
-- Optional live capture with proper permissions.
+Implemented from the original list: HTTP and TLS detection by header parsing (with SNI),
+the conversation table, the traffic-over-time chart, TCP retransmission and RTT analysis,
+and CSV export of filtered packet metadata.
+
+Still open:
+- Optional live capture with proper permissions (needs Npcap and administrator rights on Windows).
+- TCP stream reassembly, so HTTP/TLS split over several segments is recognised.
+- More application protocols (QUIC, DHCP, SMTP) and TLS certificate details for TLS 1.2.
 
 ## 14. Conclusion
 
 NetScope demonstrates how network traffic is structured in layers and how a packet analyzer
 decodes it. Using real Wireshark captures, it shows IP addressing, MAC addressing, TCP and UDP
-communication, the TCP three-way handshake, ICMP messages, ARP and DNS resolution, with every
-number computed from the actual packets.
+communication, the TCP three-way handshake, retransmissions and round-trip time, ICMP messages,
+ARP, DNS resolution, HTTP requests and the readable part of TLS handshakes, with every number
+computed from the actual packets.

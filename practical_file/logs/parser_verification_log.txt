@@ -1,0 +1,80 @@
+WARNING: No libpcap provider available ! pcap won't be used
+{'format': 'pcap', 'packet_count': 72, 'warning': None, 'malformed_count': 0}
+{'total_packets': 72, 'total_bytes': 10361, 'unique_src_ips': 10, 'unique_dst_ips': 11, 'dns_packets': 10, 'duration': 10.469239950180054} 10.12 KB
+     IP Address  Packets
+0  192.168.1.10       37
+1       8.8.8.8        9      IP Address  Packets
+0  192.168.1.10       27
+1       8.8.8.8        9
+Network Layer
+               Protocol  Packets  Percentage
+0                  IPv4       66       91.67
+1                  IPv6        4        5.56
+2                   ARP        2        2.78
+3  Other / Not Detected        0        0.00
+Transport Layer
+               Protocol  Packets  Percentage
+0                   TCP       42       58.33
+1                   UDP       13       18.06
+2                  ICMP       11       15.28
+3                ICMPv6        4        5.56
+4        Not Applicable        2        2.78
+5  Other / Not Detected        0        0.00
+Application Layer
+               Protocol  Packets  Percentage
+0                   DNS       10       13.89
+1  Other / Not Detected       62       86.11
+  TCP Flags  Packets
+0       ACK       16
+1  PSH, ACK        8
+2  FIN, ACK        8
+3       SYN        5
+4  SYN, ACK        4
+5  RST, ACK        1
+               Client              Server  SYN (packet)  SYN-ACK (packet)  ACK (packet)
+0  192.168.1.10:56299   93.184.216.34:443            13                14            15
+1  192.168.1.10:57866  208.80.154.224:443            25                26            27
+2  192.168.1.10:55786    140.82.112.3:443            37                38            39
+3  192.168.1.10:55248   151.101.0.223:443            49                50            51
+  Protocol  Message Type  Packets
+0     ICMP    echo-reply        5
+1     ICMP  echo-request        5
+2   ICMPv6    Echo Reply        2
+3   ICMPv6  Echo Request        2
+4     ICMP  dest-unreach        1
+          Domain  Queries
+0    example.com        2
+1  wikipedia.org        1
+2     github.com        1
+3     python.org        1
+    packet_no            src_mac            dst_mac         src_ip         dst_ip network_protocol transport_protocol  application_protocol  src_port  dst_port  length tcp_flags  tcp_seq  tcp_ack  icmp_type  icmp_code     icmp_info      arp_operation    dns_query dns_query_type dns_direction
+0           1  02:00:00:00:00:10  ff:ff:ff:ff:ff:ff   192.168.1.10    192.168.1.1              ARP     Not Applicable  Other / Not Detected      <NA>      <NA>      42       NaN     <NA>     <NA>       <NA>       <NA>           NaN  Request (who-has)          NaN            NaN           NaN
+1           2  02:00:00:00:00:01  02:00:00:00:00:10    192.168.1.1   192.168.1.10              ARP     Not Applicable  Other / Not Detected      <NA>      <NA>      42       NaN     <NA>     <NA>       <NA>       <NA>           NaN      Reply (is-at)          NaN            NaN           NaN
+2           3  02:00:00:00:00:10  02:00:00:00:00:01   192.168.1.10        8.8.8.8             IPv4               ICMP  Other / Not Detected      <NA>      <NA>      58       NaN     <NA>     <NA>          8          0  echo-request                NaN          NaN            NaN           NaN
+3           4  02:00:00:00:00:01  02:00:00:00:00:10        8.8.8.8   192.168.1.10             IPv4               ICMP  Other / Not Detected      <NA>      <NA>      58       NaN     <NA>     <NA>          0          0    echo-reply                NaN          NaN            NaN           NaN
+10         11  02:00:00:00:00:10  02:00:00:00:00:01   192.168.1.10        8.8.8.8             IPv4                UDP                   DNS     62779        53      71       NaN     <NA>     <NA>       <NA>       <NA>           NaN                NaN  example.com              A         Query
+11         12  02:00:00:00:00:01  02:00:00:00:00:10        8.8.8.8   192.168.1.10             IPv4                UDP                   DNS        53     62779      98       NaN     <NA>     <NA>       <NA>       <NA>           NaN                NaN  example.com              A      Response
+12         13  02:00:00:00:00:10  02:00:00:00:00:01   192.168.1.10  93.184.216.34             IPv4                TCP  Other / Not Detected     56299       443      54       SYN  5194038        0       <NA>       <NA>           NaN                NaN          NaN            NaN           NaN
+13         14  02:00:00:00:00:01  02:00:00:00:00:10  93.184.216.34   192.168.1.10             IPv4                TCP  Other / Not Detected       443     56299      54  SYN, ACK  5541484  5194039       <NA>       <NA>           NaN                NaN          NaN            NaN           NaN
+14         15  02:00:00:00:00:10  02:00:00:00:00:01   192.168.1.10  93.184.216.34             IPv4                TCP  Other / Not Detected     56299       443      54       ACK  5194039  5541485       <NA>       <NA>           NaN                NaN          NaN            NaN           NaN
+58         59  02:00:00:00:00:10  02:00:00:00:00:01   192.168.1.10    192.168.1.1             IPv4                TCP  Other / Not Detected     51515      8080      54       SYN     4242        0       <NA>       <NA>           NaN                NaN          NaN            NaN           NaN
+59         60  02:00:00:00:00:01  02:00:00:00:00:10    192.168.1.1   192.168.1.10             IPv4                TCP  Other / Not Detected      8080     51515      54  RST, ACK        0     4243       <NA>       <NA>           NaN                NaN          NaN            NaN           NaN
+60         61  02:00:00:00:00:23  02:00:00:00:00:01   192.168.1.23        8.8.8.8             IPv4                UDP                   DNS     50123        53      71       NaN     <NA>     <NA>       <NA>       <NA>           NaN                NaN  example.com           AAAA         Query
+61         62  02:00:00:00:00:01  02:00:00:00:00:23        8.8.8.8   192.168.1.23             IPv4                UDP                   DNS        53     50123     110       NaN     <NA>     <NA>       <NA>       <NA>           NaN                NaN  example.com           AAAA      Response
+64         65  02:00:00:00:00:10  02:00:00:00:00:01   192.168.1.10   203.0.113.50             IPv4                UDP  Other / Not Detected     60000      3478     202       NaN     <NA>     <NA>       <NA>       <NA>           NaN                NaN          NaN            NaN           NaN
+67         68  02:00:00:00:00:10  02:00:00:00:00:01       fe80::10        fe80::1             IPv6             ICMPv6  Other / Not Detected      <NA>      <NA>      62       NaN     <NA>     <NA>        128          0  Echo Request                NaN          NaN            NaN           NaN
+68         69  02:00:00:00:00:01  02:00:00:00:00:10        fe80::1       fe80::10             IPv6             ICMPv6  Other / Not Detected      <NA>      <NA>      62       NaN     <NA>     <NA>        129          0    Echo Reply                NaN          NaN            NaN           NaN
+71         72  02:00:00:00:00:01  02:00:00:00:00:10    192.168.1.1   192.168.1.10             IPv4               ICMP  Other / Not Detected      <NA>      <NA>      70       NaN     <NA>     <NA>          3          3  dest-unreach                NaN          NaN            NaN           NaN
+dns 4 [11, 23, 35, 47]
+dns+arp 12 [1, 2, 11, 12, 23, 24, 35, 36, 47, 48, 61, 62]
+arp 2 [1, 2]
+icmpv6 4 [68, 69, 70, 71]
+nomatch 0 []
+tcp 42 [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26]
+pcapng {'format': 'pcapng', 'packet_count': 72, 'warning': None, 'malformed_count': 0} {'total_packets': 72, 'total_bytes': 10361, 'unique_src_ips': 10, 'unique_dst_ips': 11, 'dns_packets': 10, 'duration': 10.469239950180054} True
+kit pcap {'format': 'pcap', 'packet_count': 72, 'warning': None, 'malformed_count': 0} True
+invalid_demo.pcap ERROR: This file is not a valid PCAP or PCAPNG capture. Save the capture from Wireshark using File > Save As (pcap or pcapng).
+no_packets.pcap ERROR: The capture file is valid but contains no packets.
+truncated_demo.pcap {'format': 'pcap', 'packet_count': 72, 'warning': 'The capture file ends in the middle of a packet (it may have been cut off while saving). 72 complete or partial packets were analyzed; the incomplete final packet may be missing or shortened.', 'malformed_count': 0} {'total_packets': 72, 'total_bytes': 10353, 'unique_src_ips': 10, 'unique_dst_ips': 11, 'dns_packets': 10, 'duration': 10.469239950180054}
+    packet_no            src_mac            dst_mac       src_ip        dst_ip network_protocol transport_protocol  application_protocol  src_port  dst_port  length tcp_flags  tcp_seq  tcp_ack  icmp_type  icmp_code     icmp_info arp_operation dns_query dns_query_type dns_direction
+71         72  02:00:00:00:00:01  02:00:00:00:00:10  192.168.1.1  192.168.1.10             IPv4               ICMP  Other / Not Detected      <NA>      <NA>      62       NaN     <NA>     <NA>          3          3  dest-unreach           NaN       NaN            NaN           NaN

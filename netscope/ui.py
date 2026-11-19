@@ -364,3 +364,31 @@ def bar_chart(data: pd.DataFrame, category: str, color: str = PRIMARY) -> None:
     chart = (bars + labels).properties(height=alt.Step(34)).configure_view(stroke=None) \
         .configure(background="transparent", padding={"left": 0, "right": 24, "top": 4, "bottom": 0})
     st.altair_chart(chart, width="stretch")
+
+
+def time_chart(data: pd.DataFrame, metric: str, interval: float, color: str = PRIMARY) -> None:
+    """Step chart of packets or bytes per time interval (traffic over time)."""
+    # Repeat the last interval at its end time so the final step is drawn full width.
+    if len(data):
+        tail = data.iloc[[-1]].copy()
+        tail["Time (s)"] = tail["Time (s)"] + interval
+        data = pd.concat([data, tail], ignore_index=True)
+    base = alt.Chart(data).encode(
+        x=alt.X("Time (s):Q", title=f"Seconds since first packet (bins of {interval:g} s)",
+                scale=alt.Scale(domainMin=0, nice=False),
+                axis=alt.Axis(grid=False, domain=False, labelColor=SUBTLE, labelFontSize=11,
+                              labelFont=FONT, titleColor=MUTED, titleFontSize=11.5, titleFont=FONT,
+                              titleFontWeight=500)),
+        y=alt.Y(f"{metric}:Q", title=None,
+                axis=alt.Axis(format="d" if metric == "Packets" else "~s", tickMinStep=1, grid=True,
+                              gridColor="#EEF1F6", gridDash=[3, 3], domain=False, ticks=False,
+                              labelColor=SUBTLE, labelFontSize=11, labelFont=FONT, tickCount=4)),
+        tooltip=[alt.Tooltip("Time (s):Q", title="From (s)"),
+                 alt.Tooltip(f"{metric}:Q", title=metric.capitalize(), format=",")],
+    )
+    area = base.mark_area(color=color, opacity=0.12, interpolate="step-after")
+    line = base.mark_line(color=color, strokeWidth=2, interpolate="step-after")
+    chart = (area + line).properties(height=220).configure_view(stroke=None) \
+        .configure(background="transparent", padding={"left": 0, "right": 12, "top": 6, "bottom": 0})
+    st.altair_chart(chart, width="stretch")
+
