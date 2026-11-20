@@ -1,5 +1,5 @@
 """
-Protocol classification for NetScope.
+Protocol classification for TraceNet.
 
 Every packet is classified at three separate layers of the TCP/IP model:
 

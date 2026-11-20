@@ -1,5 +1,5 @@
 """
-Packet parsing for NetScope.
+Packet parsing for TraceNet.
 
 Reads a PCAP or PCAPNG capture file with Scapy and converts every packet into
 a small metadata record (a plain dictionary). The list of records is then

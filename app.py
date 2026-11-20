@@ -1,5 +1,5 @@
 """
-NetScope - Network Traffic Analysis and Packet Analyzer
+TraceNet - Network Traffic Analysis and Packet Analyzer
 Streamlit user interface.
 
 Run with:   streamlit run app.py
@@ -47,7 +47,7 @@ TABLE_COLUMNS = {
     "length": "Packet Length",
 }
 
-st.set_page_config(page_title="NetScope · Packet Analyzer", page_icon=LOGO_MARK, layout="wide")
+st.set_page_config(page_title="TraceNet · Packet Analyzer", page_icon=LOGO_MARK, layout="wide")
 
 
 def max_upload_mb() -> int:
@@ -66,7 +66,7 @@ def analyze_capture(file_bytes: bytes, file_name: str):
     re-parse the capture. The capture file itself is never kept on disk.
     """
     suffix = os.path.splitext(file_name)[1].lower() or ".pcap"
-    fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="netscope_")
+    fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="tracenet_")
     try:
         with os.fdopen(fd, "wb") as tmp:
             tmp.write(file_bytes)
@@ -525,7 +525,7 @@ def page_protocol_analysis():
 
 
 def page_about():
-    ui.page_header("Project", "About NetScope",
+    ui.page_header("Project", "About TraceNet",
                    "A Computer Networks mini-project that reads packets captured with Wireshark, "
                    "analyzes them offline with Scapy and presents the results in this dashboard.")
     st.html("""
@@ -534,7 +534,7 @@ def page_about():
         <li>Capture traffic in Wireshark on a network you are authorized to analyze.</li>
         <li>Save it as a PCAP or PCAPNG file.</li>
         <li>Upload the file here. Scapy decodes each packet layer by layer.</li>
-        <li>NetScope extracts metadata (addresses, ports, flags, DNS names) and computes statistics.</li>
+        <li>TraceNet extracts metadata (addresses, ports, flags, DNS names) and computes statistics.</li>
       </ol></div>
       <div class="ns-tile"><h4>Concepts demonstrated</h4><ol>
         <li>Packet structure and the layered TCP/IP model</li>

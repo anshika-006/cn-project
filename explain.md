@@ -1,6 +1,6 @@
-# NetScope Explained: The Complete Guide
+# TraceNet Explained: The Complete Guide
 
-This guide explains **everything** about NetScope in simple words: the networking theory,
+This guide explains **everything** about TraceNet in simple words: the networking theory,
 the sample demo file, every screen of the app, and how the code works.
 
 Most examples use the built-in demo file **`sample_data/sample_capture.pcap`**, so you can
@@ -13,7 +13,7 @@ from the drop-down under the same switch (section 5.5).
 
 ## Contents
 
-1. [NetScope in one minute](#1-netscope-in-one-minute)
+1. [TraceNet in one minute](#1-tracenet-in-one-minute)
 2. [Networking basics you need first](#2-networking-basics-you-need-first)
 3. [The protocols, one by one (with real packets)](#3-the-protocols-one-by-one-with-real-packets)
 4. [Capture files: Wireshark, PCAP and PCAPNG](#4-capture-files-wireshark-pcap-and-pcapng)
@@ -28,9 +28,9 @@ from the drop-down under the same switch (section 5.5).
 
 ---
 
-## 1. NetScope in one minute
+## 1. TraceNet in one minute
 
-**What it is:** NetScope is a web dashboard that opens a network capture file (made with
+**What it is:** TraceNet is a web dashboard that opens a network capture file (made with
 Wireshark), reads every packet inside it, and shows you, in plain charts and tables,
 *who talked to whom, using which protocols, and how*.
 
@@ -42,9 +42,9 @@ Wireshark), reads every packet inside it, and shows you, in plain charts and tab
 | The envelope's address | The **IP address** |
 | The house's door number | The **port** number |
 | A pile of letters collected in a sack | A **capture file** (.pcap) |
-| A person who reads every envelope and makes a report | **NetScope** |
+| A person who reads every envelope and makes a report | **TraceNet** |
 
-NetScope reads only the **envelopes** (headers). It never opens or displays what is inside
+TraceNet reads only the **envelopes** (headers). It never opens or displays what is inside
 the letters (payloads). That is a privacy rule built into the project.
 
 **The three steps:**
@@ -52,7 +52,7 @@ the letters (payloads). That is a privacy rule built into the project.
 ```
  1. CAPTURE              2. ANALYZE                     3. VISUALIZE
  Wireshark records  -->  Scapy decodes each packet, -->  Streamlit shows charts,
- packets into a          NetScope extracts header        tables and packet
+ packets into a          TraceNet extracts header        tables and packet
  .pcap / .pcapng file    data and computes statistics    details in the browser
 ```
 
@@ -86,14 +86,14 @@ Think of the header as the envelope and the payload as the letter.
 
 Networking is split into **layers**. Each layer has one job and adds its own header.
 
-| # | TCP/IP layer | OSI equivalent | Job | Protocols in NetScope | Address used |
+| # | TCP/IP layer | OSI equivalent | Job | Protocols in TraceNet | Address used |
 |---|---|---|---|---|---|
 | 4 | **Application** | Layers 5–7 | What the user's program wants | DNS (and HTTP/TLS, not decoded) | Domain names |
 | 3 | **Transport** | Layer 4 | Delivery between *programs* | TCP, UDP | **Port** numbers |
 | 2 | **Network (Internet)** | Layer 3 | Delivery between *computers* across networks | IPv4, IPv6, ICMP, ICMPv6 | **IP** addresses |
 | 1 | **Link** | Layers 1–2 | Delivery to the *next device* on the same network | Ethernet, ARP | **MAC** addresses |
 
-> ICMP technically sits inside IP (it is a "helper" of the network layer), but NetScope
+> ICMP technically sits inside IP (it is a "helper" of the network layer), but TraceNet
 > shows it in the **transport layer** column, because it is the protocol that comes directly
 > after the IP header, in the same position where TCP or UDP would be.
 
@@ -181,9 +181,9 @@ address, but you usually only know its **IP** address. ARP finds the MAC for an 
 | 2 | `192.168.1.1` → `192.168.1.10` | Reply (is-at) | "192.168.1.1 is at MAC 02:00:00:00:00:01." Sent directly back. |
 
 Key facts:
-- ARP has **no IP header and no transport layer**. That is why NetScope shows its transport
+- ARP has **no IP header and no transport layer**. That is why TraceNet shows its transport
   layer as **"Not Applicable"**.
-- NetScope shows the IP addresses written *inside* the ARP message as source/destination IP.
+- TraceNet shows the IP addresses written *inside* the ARP message as source/destination IP.
 - Size: 14 (Ethernet) + 28 (ARP) = **42 bytes**.
 
 ### 3.3 IPv4: Internet Protocol version 4
@@ -232,7 +232,7 @@ what you see when you type `ping 8.8.8.8` in a terminal.
 
 **Sample, destination unreachable (packet 72):** the router tells the laptop that a UDP
 packet could not be delivered (type 3, code 3 = *port unreachable*). This packet is special:
-inside it there is a **copy of the original IP + UDP header** that failed. NetScope
+inside it there is a **copy of the original IP + UDP header** that failed. TraceNet
 correctly reports it as **ICMP**, not UDP, because it reads the **outermost** layers first
 (see [7.4](#74-protocol_analyzerpy-classifying-every-packet)).
 
@@ -380,10 +380,10 @@ plain text: the browser sends a **request**, the server sends back a **response*
 - The first line of a response is the **status line**: version, a 3-digit **status code**
   and a reason phrase (`200 OK`, `404 Not Found`, `301 Moved Permanently`).
 
-**How NetScope detects HTTP:** it looks at the first bytes of the TCP payload. The packet is
+**How TraceNet detects HTTP:** it looks at the first bytes of the TCP payload. The packet is
 labeled HTTP only if the first line is a well-formed request line (a known method, a path and
 `HTTP/1.0` or `HTTP/1.1`) or a well-formed status line (`HTTP/1.x` followed by a code from
-100 to 599). NetScope keeps only the request line, the Host header and the status. The body
+100 to 599). TraceNet keeps only the request line, the Host header and the status. The body
 is never stored. Because it reads the content, HTTP on an unusual port (e.g. 8080) is still
 found, and text such as `GETTING started…` is **not** mistaken for HTTP.
 
@@ -418,8 +418,8 @@ The TLS 1.3 handshake, as seen in a capture:
   compatibility. The real versions are in the **supported_versions** extension. The client
   lists what it supports and the server's Server Hello names the one chosen.
 
-**How NetScope detects TLS:** a packet is labeled TLS only if its TCP payload starts with a
-valid record header (content type 20–23, version 3.x, a sensible length). NetScope then reads
+**How TraceNet detects TLS:** a packet is labeled TLS only if its TCP payload starts with a
+valid record header (content type 20–23, version 3.x, a sensible length). TraceNet then reads
 the record types (e.g. "Server Hello, Change Cipher Spec, Application Data"), the version
 from the Hello's supported_versions extension, and the SNI from a Client Hello. When there is
 no Hello, only the record header's version is known, so it is shown as
@@ -427,7 +427,7 @@ no Hello, only the record header's version is known, so it is shown as
 
 **Why the 40 port-443 packets in the mixed sample are still "Other / Not Detected":** the
 synthetic file was built with **random bytes** as payload, not real TLS records. Their first
-byte is not 20–23, so they fail the record-header check. NetScope's rule is: **only label a
+byte is not 20–23, so they fail the record-header check. TraceNet's rule is: **only label a
 protocol if its header was actually decoded, never guess from the port number.** A packet
 on port 443 *could* be something else, and here it really is.
 
@@ -465,7 +465,7 @@ Normally a network card ignores packets not meant for it. A capture tool (Wiresh
 the card in a mode where it hands **a copy of every packet** to the program. On Windows,
 the **Npcap** driver does this. Wireshark then saves the packets to a file.
 
-NetScope does **not** capture. It only **reads saved files**, so it doesn't need Npcap or
+TraceNet does **not** capture. It only **reads saved files**, so it doesn't need Npcap or
 administrator rights. This is called **offline analysis**.
 
 ### 4.2 The two file formats
@@ -477,13 +477,13 @@ administrator rights. This is called **offline analysis**.
 | Extra info | None | Interface names, comments, multiple interfaces |
 | First 4 bytes ("magic number") | `d4 c3 b2 a1` (or variants) | `0a 0d 0d 0a` |
 
-NetScope checks the **magic number** (the first 4 bytes) to know which format a file is.
+TraceNet checks the **magic number** (the first 4 bytes) to know which format a file is.
 If the bytes match neither, it shows a friendly error instead of crashing. The sample file
 is **PCAP** format.
 
 ### 4.3 Packet timestamps
 
-Every packet in the file has the exact time it was captured (to the microsecond). NetScope
+Every packet in the file has the exact time it was captured (to the microsecond). TraceNet
 shows it as a readable date and also as **"time since first packet"**, which makes it easy
 to see delays, e.g. the ping replies arrive 15–30 ms after the requests.
 
@@ -496,14 +496,14 @@ to see delays, e.g. the ping replies arrive 15–30 ms after the requests.
 A real capture from your own network contains private data (websites you visit, device
 addresses), and you may not be allowed to capture on the college network. So the demo file
 is **synthetic**: every packet was **constructed in Python with Scapy**, following the
-real protocol rules. It looks exactly like a real capture to Wireshark and to NetScope, but
+real protocol rules. It looks exactly like a real capture to Wireshark and to TraceNet, but
 contains **no real traffic**. It is safe to share, commit to GitHub and show to anyone.
 
 - File: `sample_data/sample_capture.pcap` (PCAP format, 72 packets, 10.12 KB of packet data,
   10.47 seconds long)
 - Made by: `tools/make_sample_capture.py`. Run it again and you get the **same file**
   (the random generator uses a fixed seed).
-- You can also open this file in **Wireshark** to compare with NetScope.
+- You can also open this file in **Wireshark** to compare with TraceNet.
 
 ### 5.2 The imaginary network
 
@@ -731,7 +731,7 @@ And three in the web demo:
 You can read the whole story from this table: 5 connection attempts (SYN), 4 accepted
 (SYN+ACK), 1 refused (RST), 4 closed properly (8 FIN = 2 per connection).
 
-**Three-way handshakes:** NetScope finds the **4** completed handshakes. The RTT column
+**Three-way handshakes:** TraceNet finds the **4** completed handshakes. The RTT column
 is the time from the SYN to the SYN-ACK, which is one round trip to the server:
 
 | Client | Server | SYN | SYN-ACK | ACK | RTT (ms) |
@@ -878,7 +878,7 @@ For example, packet #13 becomes:
 `src_ip=192.168.1.10, dst_ip=93.184.216.34, network=IPv4, transport=TCP, src_port=56299,
 dst_port=443, tcp_flags="SYN", tcp_seq=5194038, length=54, application=Other`.
 
-TCP flags are stored by Scapy as letters (`"SA"`), and NetScope converts them to readable
+TCP flags are stored by Scapy as letters (`"SA"`), and TraceNet converts them to readable
 names (`"SYN, ACK"`).
 
 **Step 4, make a DataFrame.** All records become a pandas table. Ports use a special
@@ -886,7 +886,7 @@ names (`"SYN, ACK"`).
 
 **Error handling (never crash):**
 
-| Problem | What NetScope does |
+| Problem | What TraceNet does |
 |---|---|
 | Empty file | Clear error message |
 | Not a capture file (e.g. a renamed .txt) | Clear error message |
@@ -913,7 +913,7 @@ Scapy really decoded a DNS header from it, *and* it passes a sanity check: the D
 "opcode" must be a valid value and the number of questions must match the header's
 question count. Random bytes sent to port 53 are therefore **not** counted as DNS.
 
-The same rule applies to HTTP and TLS, which NetScope parses itself from the TCP payload
+The same rule applies to HTTP and TLS, which TraceNet parses itself from the TCP payload
 (`tcp_payload()` returns the payload bytes without Ethernet padding):
 
 - `parse_tls()`: the first byte must be a content type 20–23, the next two a version 3.0–3.4,
@@ -1188,7 +1188,7 @@ python tools/make_web_demo_capture.py
 
 (For the full question bank, see `VIVA_PREPARATION.md`.)
 
-**What does NetScope do?**
+**What does TraceNet do?**
 It reads a Wireshark capture file offline, decodes every packet with Scapy, classifies it
 at the network, transport and application layers, computes statistics, and shows them in a
 Streamlit dashboard.
@@ -1198,7 +1198,7 @@ ARP works directly over Ethernet. It has no IP header and no TCP/UDP header at a
 
 **Why are the port-443 packets in the mixed sample "Other / Not Detected"?**
 Their synthetic payload is random bytes, not a real TLS record, so the TLS header check
-fails. NetScope only labels protocols whose header it actually decodes; it never guesses
+fails. TraceNet only labels protocols whose header it actually decodes; it never guesses
 from the port number. In the web demo, real TLS records on port 443 *are* labeled TLS.
 
 **How do you detect HTTP and TLS?**
@@ -1233,7 +1233,7 @@ sequence/acknowledgement numbers. Sample: packets 13, 14, 15.
 Packet 59 tried port 8080 and was refused with RST (packet 60).
 
 **Why does the ICMP unreachable packet not count as UDP?**
-It contains a copy of the failed UDP header, but NetScope uses the outermost transport
+It contains a copy of the failed UDP header, but TraceNet uses the outermost transport
 layer, which is ICMP.
 
 **Why do unique destinations (11) exceed unique sources (10)?**
@@ -1270,7 +1270,7 @@ payloads are never shown.
 | **Client Hello** | First TLS handshake message, sent by the client. It lists versions, ciphers and the SNI |
 | **Conversation** | All packets between one pair of IP addresses, in both directions |
 | **CSV** | Comma-separated values: a plain-text table that Excel can open (used by Export CSV) |
-| **DataFrame** | A table in pandas, which NetScope uses with one row per packet |
+| **DataFrame** | A table in pandas, which TraceNet uses with one row per packet |
 | **DNS** | Translates domain names into IP addresses |
 | **Encapsulation** | Wrapping data in headers layer by layer |
 | **Ephemeral port** | A temporary random port used by a client (49152–65535) |
@@ -1289,7 +1289,7 @@ payloads are never shown.
 | **Npcap** | Windows driver that lets Wireshark capture packets |
 | **Offline analysis** | Analyzing a saved file instead of live traffic |
 | **Packet** | A small unit of data sent over a network |
-| **Payload** | The actual data inside a packet (never shown by NetScope) |
+| **Payload** | The actual data inside a packet (never shown by TraceNet) |
 | **Port** | Number identifying a program/service on a computer |
 | **PSH** | TCP flag: deliver this data to the application now |
 | **Retransmission** | A TCP segment sent again (same sequence number) because it was not acknowledged in time |

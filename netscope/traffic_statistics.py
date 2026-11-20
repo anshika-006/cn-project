@@ -1,5 +1,5 @@
 """
-Traffic statistics for NetScope.
+Traffic statistics for TraceNet.
 
 All functions take the packet DataFrame from packet_parser and return values
 computed from the real packets in it. Nothing here is hardcoded.

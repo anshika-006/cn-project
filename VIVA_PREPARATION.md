@@ -1,9 +1,9 @@
-# NetScope – Viva Preparation Guide
+# TraceNet – Viva Preparation Guide
 
 ## 1. The project in simple words
 
-NetScope is a packet analyzer. We record network traffic with **Wireshark** and save it as a
-file. NetScope opens that file, reads every packet with the Python library **Scapy**, works out
+TraceNet is a packet analyzer. We record network traffic with **Wireshark** and save it as a
+file. TraceNet opens that file, reads every packet with the Python library **Scapy**, works out
 which protocols each packet uses (for example IPv4 → UDP → DNS), and shows statistics, charts
 and a searchable packet table in a **Streamlit** web dashboard.
 
@@ -55,7 +55,7 @@ Scapy knows the format of hundreds of protocol headers. When it reads raw bytes 
 4. Decodes TCP/UDP. Scapy then uses port bindings (e.g. port 53 → DNS) to *try* to decode the
    payload. If the bytes don't form a valid header, it leaves them as raw data.
 
-The result is a stack of layer objects, e.g. `Ether / IP / UDP / DNS`. NetScope walks this stack
+The result is a stack of layer objects, e.g. `Ether / IP / UDP / DNS`. TraceNet walks this stack
 from the outside in and reads the fields it needs.
 
 ## 5. The Python modules
@@ -97,14 +97,14 @@ raise `CaptureFileError`, which the UI shows as a red message.
 - `ping` sends **Echo Request (type 8)** and receives **Echo Reply (type 0)**.
 - Other types: Destination Unreachable (3), Time Exceeded (11, used by `tracert`).
 - **ICMPv6** does the same for IPv6 and also replaces ARP (Neighbor Discovery).
-- ICMP is carried inside IP but has no ports. NetScope lists it with the transport protocols
+- ICMP is carried inside IP but has no ports. TraceNet lists it with the transport protocols
   because it is the protocol directly above IP.
 
 ### ARP – Address Resolution Protocol
 - Finds the **MAC address** for an IPv4 address on the local network.
 - Request (broadcast): *"Who has 192.168.1.1? Tell 192.168.1.5."*
   Reply (unicast): *"192.168.1.1 is at aa:bb:cc:dd:ee:ff."*
-- Works directly over Ethernet – **no IP header, no TCP/UDP**. That is why NetScope shows its
+- Works directly over Ethernet – **no IP header, no TCP/UDP**. That is why TraceNet shows its
   transport layer as *Not Applicable* and uses ARP's sender/target IP fields as the IP addresses.
 
 ## 7. IPv4 vs IPv6
@@ -141,7 +141,7 @@ Client                                  Server
 
 - It synchronizes the initial sequence numbers of both sides and confirms both can send and receive.
 - Connection close uses FIN/ACK in each direction (a four-way close); RST aborts immediately.
-- **How NetScope detects it:** it remembers each SYN (by IPs and ports), then looks for a SYN-ACK
+- **How TraceNet detects it:** it remembers each SYN (by IPs and ports), then looks for a SYN-ACK
   in the reverse direction whose ack = x + 1, then an ACK from the client whose ack = y + 1. All
   three packet numbers are shown on the Protocol Analysis page.
 
@@ -149,7 +149,7 @@ Client                                  Server
 
 - Free, open-source and the industry-standard packet capture tool.
 - Uses Npcap to capture from any interface and saves standard PCAP/PCAPNG files.
-- Separating capture (Wireshark) from analysis (NetScope) means NetScope needs no administrator
+- Separating capture (Wireshark) from analysis (TraceNet) means TraceNet needs no administrator
   rights or capture drivers, and the same file can be re-analyzed any time.
 
 ## 11. Why Scapy?
@@ -164,7 +164,7 @@ Client                                  Server
 
 - Offline only (no live capture).
 - Only DNS is identified at the application layer; HTTP/TLS are not guessed from ports.
-- Encrypted payloads cannot be read (and NetScope does not show payloads anyway).
+- Encrypted payloads cannot be read (and TraceNet does not show payloads anyway).
 - No IP fragment or TCP stream reassembly.
 - Scapy is slow for large files, so uploads are limited to 25 MB.
 
@@ -185,11 +185,11 @@ Both store captured packets. PCAP is simpler: one global header and a record hea
 PCAPNG stores blocks and supports multiple interfaces, comments and more metadata. Wireshark saves
 PCAPNG by default.
 
-**4. How does NetScope know a file is a valid capture?**
+**4. How does TraceNet know a file is a valid capture?**
 It checks the first 4 bytes (magic number): `D4 C3 B2 A1` / `A1 B2 C3 D4` (and nanosecond
 variants) for PCAP, `0A 0D 0D 0A` for PCAPNG. Anything else is rejected.
 
-**5. Explain the TCP/IP layers that NetScope classifies.**
+**5. Explain the TCP/IP layers that TraceNet classifies.**
 Link layer (Ethernet – MAC addresses), network layer (IPv4/IPv6/ARP – logical addressing and
 routing), transport layer (TCP/UDP – ports, process-to-process delivery) and application layer
 (DNS etc.).
@@ -212,7 +212,7 @@ Ports belong to TCP and UDP. ICMP sits directly on IP and uses type/code fields;
 directly on Ethernet and has no IP or transport header at all.
 
 **10. Why not identify DNS just by port 53?**
-Any program can send any data on port 53. NetScope counts a packet as DNS only when Scapy
+Any program can send any data on port 53. TraceNet counts a packet as DNS only when Scapy
 successfully decodes a valid DNS header (valid opcode and the number of questions matches the
 header). Our tests include random bytes on port 53 that are correctly *not* counted as DNS.
 
@@ -257,7 +257,7 @@ The sum of the captured length of all packets, i.e. the bytes Wireshark saved fo
 **20. What does "Other / Not Detected" mean? Is it the same as zero?**
 No. *Zero* means no packets of that protocol were present. *Other / Not Detected* means packets
 existed but their protocol at that layer was not one we identify (e.g. IGMP over IPv4) or could
-not be decoded. NetScope shows both separately, including categories with a count of 0.
+not be decoded. TraceNet shows both separately, including categories with a count of 0.
 
 **21. How do you handle malformed packets or corrupted files?**
 Each packet is decoded inside a try/except: a bad packet is still counted, labelled
@@ -283,7 +283,7 @@ used in tests, never shown as real traffic.
 
 **25. Is it legal/ethical to capture network traffic?**
 Only on networks you own or have permission to analyze. Capturing other people's traffic without
-permission can violate privacy laws and institutional rules. NetScope also avoids showing payload
+permission can violate privacy laws and institutional rules. TraceNet also avoids showing payload
 contents.
 
 **26. What is the difference between captured length and original length?**

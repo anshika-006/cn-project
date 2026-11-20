@@ -1,4 +1,4 @@
-# NetScope demo data
+# TraceNet demo data
 
 All frames in this kit are synthetic. The project generated them for offline analysis. Copy this folder beside the project's `app.py`. The three error-case files are ready to upload through the same sidebar control.
 
@@ -9,13 +9,13 @@ All frames in this kit are synthetic. The project generated them for offline ana
 | `invalid_demo.pcap` | Upload through the sidebar. | Plain text with a .pcap extension; parser reports that the file is not a valid PCAP or PCAPNG capture. |
 | `no_packets.pcap` | Upload through the sidebar. | A valid PCAP global header with zero frames; parser reports that the capture contains no packets. |
 | `truncated_demo.pcap` | Upload through the sidebar. | A copy of the valid PCAP with eight bytes removed from the end. The app warns that the final packet may be missing or shortened, and displays the results it could read. |
-| `packet_index.csv` | Open in a spreadsheet or use it as a report appendix. | All 72 rows of decoded packet metadata in capture order, including separate protocol labels, header fields and relative time in seconds. This file was generated with NetScope's parser outside the dashboard. |
+| `packet_index.csv` | Open in a spreadsheet or use it as a report appendix. | All 72 rows of decoded packet metadata in capture order, including separate protocol labels, header fields and relative time in seconds. This file was generated with TraceNet's parser outside the dashboard. |
 
 ## Verified baseline
 
 **72 packets · 10,361 captured frame bytes (10.12 KB displayed) · 10.47 seconds · 10 source IPs · 11 destination IPs**. The busiest source and destination are both `192.168.1.10`, with 37 sent and 27 received. The file itself takes more bytes than the summed frame lengths because PCAP adds file and per-record headers.
 
-| NetScope grouping | Packet counts |
+| TraceNet grouping | Packet counts |
 |---|---|
 | Network | IPv4 66, IPv6 4, ARP 2, Other / Not Detected 0 |
 | Transport | TCP 42, UDP 13, ICMP 11, ICMPv6 4, Not Applicable 2, Other / Not Detected 0 |

@@ -1,5 +1,5 @@
 """
-Packet filtering for NetScope.
+Packet filtering for TraceNet.
 
 Filters always return a NEW DataFrame. The original packet DataFrame is never
 modified, so dashboard statistics are not affected by what the user filters.

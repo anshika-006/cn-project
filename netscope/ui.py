@@ -1,5 +1,5 @@
 """
-NetScope design system for the Streamlit interface (light mode only).
+TraceNet design system for the Streamlit interface (light mode only).
 
 Everything visual lives here: colour tokens, the global stylesheet, and small
 HTML components (page header, KPI tiles, cards, empty state). app.py only
@@ -331,7 +331,7 @@ def empty_state() -> None:
 def footer() -> None:
     st.html("""
     <div class="ns-footer">
-      <span><b style="color:#475569">NetScope</b> · Network Traffic Analysis and Packet Analyzer</span>
+      <span><b style="color:#475569">TraceNet</b> · Network Traffic Analysis and Packet Analyzer</span>
       <span>Built with Python · Scapy · Pandas · Streamlit</span>
     </div>""")
 

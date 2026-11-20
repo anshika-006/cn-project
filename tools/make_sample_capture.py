@@ -3,7 +3,7 @@ Build the synthetic demo capture used by the "Use sample capture" option.
 
 The file contains NO real network traffic: every packet is constructed with
 Scapy, so it is safe to share and to show in a demo. It covers every protocol
-NetScope understands (Ethernet, ARP, IPv4, IPv6, TCP, UDP, ICMP, ICMPv6, DNS).
+TraceNet understands (Ethernet, ARP, IPv4, IPv6, TCP, UDP, ICMP, ICMPv6, DNS).
 
 Run from the project folder:
     python tools/make_sample_capture.py
@@ -98,7 +98,7 @@ for i, (domain, site_ip) in enumerate(SITES.items()):
     add(out() / up / tcp(flags="S", seq=c_seq))
     add(back() / down / rtcp(flags="SA", seq=s_seq, ack=c_seq + 1))
     add(out() / up / tcp(flags="A", seq=c_seq + 1, ack=s_seq + 1))
-    # Encrypted-looking payload (random bytes; NetScope never displays payloads).
+    # Encrypted-looking payload (random bytes; TraceNet never displays payloads).
     hello, reply = random.randbytes(220), random.randbytes(1200)
     add(out() / up / tcp(flags="PA", seq=c_seq + 1, ack=s_seq + 1) / Raw(hello))
     add(back() / down / rtcp(flags="A", seq=s_seq + 1, ack=c_seq + 1 + len(hello)))

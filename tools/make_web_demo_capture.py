@@ -1,5 +1,5 @@
 """
-Build a second synthetic demo capture that shows the newer NetScope features:
+Build a second synthetic demo capture that shows the newer TraceNet features:
 HTTP and TLS detection (with SNI), TCP retransmissions and RTT.
 
 Like sample_capture.pcap it contains NO real traffic: every packet is built
@@ -151,7 +151,7 @@ def build_capture() -> list:
     # 2. Plain HTTP: GET, the response is lost once and retransmitted
     http = Conn(HTTP_SERVER, 50100, 80, rtt=0.042)
     http.handshake()
-    request = (b"GET /index.html HTTP/1.1\r\nHost: example.com\r\nUser-Agent: NetScope-demo\r\n"
+    request = (b"GET /index.html HTTP/1.1\r\nHost: example.com\r\nUser-Agent: TraceNet-demo\r\n"
                b"Accept: */*\r\n\r\n")
     http.c2s("PA", request)
     http.c = (http.c + len(request)) % 2**32

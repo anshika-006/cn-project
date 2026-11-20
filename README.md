@@ -1,7 +1,7 @@
-# NetScope – Network Traffic Analysis and Packet Analyzer
+# TraceNet – Network Traffic Analysis and Packet Analyzer
 
 A Computer Networks mini-project that analyzes **real network packets captured with Wireshark**.
-Upload a `.pcap` or `.pcapng` file and NetScope parses every packet with **Scapy**, identifies
+Upload a `.pcap` or `.pcapng` file and TraceNet parses every packet with **Scapy**, identifies
 protocols at the network, transport and application layers, and shows the results in a
 **Streamlit** dashboard.
 
@@ -11,7 +11,7 @@ protocols at the network, transport and application layers, and shows the result
 
 Every action on a network (opening a website, sending a message, pinging a server) is carried
 by small units of data called **packets**. Tools like Wireshark can record these packets, but the
-raw capture is hard to read for a beginner. NetScope turns a capture file into clear statistics,
+raw capture is hard to read for a beginner. TraceNet turns a capture file into clear statistics,
 charts and a searchable packet table, so that networking concepts such as IP addressing, TCP/UDP,
 DNS, ICMP and ARP can be seen in real traffic.
 
@@ -84,7 +84,7 @@ netscope/
 │   ├── test_packet_parser.py
 │   ├── test_protocol_analyzer.py
 │   └── test_future_scope.py   # HTTP/TLS, conversations, time chart, retransmission/RTT, CSV
-├── assets/                    # NetScope logo (logo.svg, mark.svg)
+├── assets/                    # TraceNet logo (logo.svg, mark.svg)
 ├── sample_data/               # Synthetic demo captures (sample_capture.pcap, web_demo_capture.pcap)
 ├── tools/make_sample_capture.py     # Rebuilds the mixed-protocol demo capture with Scapy
 ├── tools/make_web_demo_capture.py   # Rebuilds the HTTP/TLS/retransmission demo capture
@@ -101,7 +101,7 @@ netscope/
 
 1. **Validation** – the first 4 bytes of the file (the *magic number*) must identify a PCAP or
    PCAPNG file. Empty files and other file types are rejected with a clear message.
-2. **Parsing** – Scapy's `PcapReader` reads packets one by one. For every packet NetScope records:
+2. **Parsing** – Scapy's `PcapReader` reads packets one by one. For every packet TraceNet records:
    packet number, timestamp, MAC addresses, IP addresses, ports, length, TCP flags and sequence
    numbers, TCP payload length, ICMP type, ARP operation, DNS query name, the HTTP request or
    status line and Host header, and the TLS record type, version and SNI server name.
@@ -187,7 +187,7 @@ python -m pip install -r requirements.txt
    it to capture packets on Windows.
 3. Restart the computer if the installer asks.
 
-NetScope itself does **not** need Npcap; it only reads saved files.
+TraceNet itself does **not** need Npcap; it only reads saved files.
 
 ### 9.1 Capturing packets
 
@@ -216,7 +216,7 @@ NetScope itself does **not** need Npcap; it only reads saved files.
 To save only some packets (e.g. after applying a display filter like `dns or icmp`), use
 **File → Export Specified Packets…** and choose *All packets → Displayed*.
 
-## 10. Running NetScope
+## 10. Running TraceNet
 
 ```powershell
 cd cn-project
@@ -318,7 +318,7 @@ Still open:
 
 ## 14. Conclusion
 
-NetScope demonstrates how network traffic is structured in layers and how a packet analyzer
+TraceNet demonstrates how network traffic is structured in layers and how a packet analyzer
 decodes it. Using real Wireshark captures, it shows IP addressing, MAC addressing, TCP and UDP
 communication, the TCP three-way handshake, retransmissions and round-trip time, ICMP messages,
 ARP, DNS resolution, HTTP requests and the readable part of TLS handshakes, with every number

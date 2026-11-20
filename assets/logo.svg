@@ -11,5 +11,5 @@
   <path d="M18 18 L26.5 10.5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
   <circle cx="18" cy="18" r="2.4" fill="#fff"/>
   <circle cx="24.2" cy="22.6" r="1.6" fill="#7CF2DC"/>
-  <text x="46" y="24.5" font-family="'Plus Jakarta Sans','Segoe UI',Inter,system-ui,sans-serif" font-size="19" font-weight="800" letter-spacing="-0.4" fill="#0B1220">Net<tspan fill="#3554F5">Scope</tspan></text>
+  <text x="46" y="24.5" font-family="'Plus Jakarta Sans','Segoe UI',Inter,system-ui,sans-serif" font-size="19" font-weight="800" letter-spacing="-0.4" fill="#0B1220">Trace<tspan fill="#3554F5">Net</tspan></text>
 </svg>

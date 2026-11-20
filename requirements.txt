@@ -1,5 +1,5 @@
-# NetScope dependencies (tested with Python 3.13)
-streamlit>=1.45      # web dashboard (includes Altair for charts)
-pandas>=2.0          # tables and statistics
+# TraceNet dependencies (tested with Python 3.13, Streamlit 1.67, pandas 3.1, Scapy 2.8)
+streamlit>=1.67,<2   # web dashboard (includes Altair for charts)
+pandas>=2.2          # tables and statistics
 scapy>=2.6           # packet parsing (PCAP and PCAPNG)
 pytest>=8.0          # automated tests

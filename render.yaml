@@ -1,0 +1,16 @@
+# Render Blueprint for TraceNet (https://render.com/docs/blueprint-spec)
+# Create the service in the Render dashboard: New > Blueprint > pick this repository.
+services:
+  - type: web
+    name: tracenet
+    runtime: python
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    # Render sets $PORT; Streamlit must listen on it on all interfaces.
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5

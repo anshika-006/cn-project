@@ -1,5 +1,5 @@
 [server]
-# Maximum upload size in megabytes. NetScope reads this value too,
+# Maximum upload size in megabytes. TraceNet reads this value too,
 # so change it here to raise or lower the capture file limit.
 maxUploadSize = 25
 
@@ -11,7 +11,7 @@ gatherUsageStats = false
 toolbarMode = "viewer"
 
 # ---------------------------------------------------------------------------
-# NetScope brand theme (light mode only)
+# TraceNet brand theme (light mode only)
 # Colours are mirrored in netscope/ui.py; change them in both places.
 # ---------------------------------------------------------------------------
 [theme]
